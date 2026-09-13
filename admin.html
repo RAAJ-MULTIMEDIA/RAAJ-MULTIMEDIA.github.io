@@ -22,7 +22,36 @@ const DEFAULT_STORE={
  afa:{mode:'manual', momo_number:'0241113791', momo_name:'Mohammed Suraj', amount:35, my_paystack_link:'https://paystack.com/pay/raaj-afa'},
  sms:{enabled:false, api_key:'', sender:'RaajData', provider:'hubtel'}
 };
-let session=false, tab='Dashboard', agents=[], txs=[], afas=[], withdraws=[], storeCfg=JSON.parse(JSON.stringify(DEFAULT_STORE)), bundlePrices=JSON.parse(JSON.stringify(DEFAULT_BUNDLES)), checkerPrices={WASSCE:25,BECE:15,CSSPS:10}, supaCfg={url:'https://hvqhxfnhnqgxlasgllwf.supabase.co', anonKey:''};
+let session=false, tab='Dashboard', agents=[], txs=[], afas=[], withdraws=[], storeCfg=JSON.parse(JSON.stringify(DEFAULT_STORE)), bundlePrices=JSON.parse(JSON.stringify(DEFAULT_BUNDLES)), checkerPrices={WASSCE:25,BECE:15,CSSPS:10}, supaCfg={url:'https://hvqhxfnhnqgxlasgllwf.supabase.co', anonKey:''} // Add your anon key in Checkers & Settings -> Supabase;
+
+async function syncFromSupabaseCloud(){
+  try{
+    if(!supaCfg.url || !supaCfg.anonKey) return;
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+    const supabase = createClient(supaCfg.url, supaCfg.anonKey);
+    const { data, error } = await supabase.from('products').select('*').eq('available', true).order('price');
+    if(error) return;
+    if(!data || data.length==0) return;
+    // Rebuild bundlePrices from cloud
+    let newPrices={MTN:[], Telecel:[], AirtelTigo:[]};
+    for(let p of data){
+      if(p.network==='Services') continue;
+      let gb=parseInt((p.size||p.bundle||'').replace('GB',''));
+      if(isNaN(gb)) continue;
+      if(!newPrices[p.network]) newPrices[p.network]=[];
+      // avoid dup
+      if(!newPrices[p.network].find(x=>x.gb===gb)){
+        newPrices[p.network].push({gb, price: p.price});
+      }
+    }
+    for(let k of Object.keys(newPrices)){ newPrices[k].sort((a,b)=>a.gb-b.gb); }
+    if(newPrices.MTN.length>0 || newPrices.Telecel.length>0){
+      bundlePrices=newPrices;
+      localStorage.setItem('raaj_bundle_prices', JSON.stringify(bundlePrices));
+      console.log('Synced '+data.length+' bundles from Supabase cloud to admin');
+    }
+  }catch(e){ console.log('Cloud sync skipped', e.message); }
+}
 
 function load(){
  try{ session=JSON.parse(localStorage.getItem('raaj_admin_session')||'null')?.logged||false; }catch{}
@@ -35,9 +64,52 @@ function load(){
  try{ const cp=JSON.parse(localStorage.getItem('raaj_checker_prices')||'null'); if(cp) checkerPrices=cp; }catch{}
  try{ const sc=JSON.parse(localStorage.getItem('raaj_supabase_config')||'null'); if(sc) supaCfg=sc; }catch{}
  render();
+ // Try cloud sync in background after render
+ setTimeout(()=>{ syncFromSupabaseCloud().then(()=>render()); }, 800);
 }
 function saveStore(){ localStorage.setItem('raaj_store_config', JSON.stringify(storeCfg)); render(); alert('Saved! LIVE: '+storeCfg.bundles.mode); }
-function saveBundles(){ localStorage.setItem('raaj_bundle_prices', JSON.stringify(bundlePrices)); alert('Bundle Prices Saved!'); render(); }
+async function saveBundles(){
+  localStorage.setItem('raaj_bundle_prices', JSON.stringify(bundlePrices));
+  // ALSO SYNC TO SUPABASE CLOUD - keep all original + sync
+  try{
+    if(!supaCfg.url || !supaCfg.anonKey){ alert('Bundle Prices Saved Locally! (Add Supabase anonKey in Checkers & Settings to also sync to cloud)'); render(); return; }
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+    const supabase = createClient(supaCfg.url, supaCfg.anonKey);
+    // Convert bundlePrices object to rows for products table
+    let rows=[];
+    for(let net of Object.keys(bundlePrices)){
+      for(let b of bundlePrices[net]){
+        rows.push({
+          network: net,
+          size: b.gb + 'GB',
+          bundle: b.gb + 'GB',
+          price: b.price,
+          agent_price: (b.price*0.9).toFixed(2), // 10% less as agent price default
+          available: true,
+          description: net + ' ' + b.gb + 'GB'
+        });
+      }
+    }
+    // Add checkers as Services if exists
+    if(checkerPrices){
+      rows.push({network:'Services', size:'WASSCE Checker', bundle:'WASSCE Checker', price: checkerPrices.WASSCE||25, agent_price: (checkerPrices.WASSCE||25)-3, available:true, description:'WASSCE Result Checker'});
+      rows.push({network:'Services', size:'BECE Checker', bundle:'BECE Checker', price: checkerPrices.BECE||15, agent_price: (checkerPrices.BECE||15)-2, available:true, description:'BECE Result Checker'});
+    }
+    // Clear and insert? Upsert by network+size
+    // For simplicity, delete existing and insert new 43
+    // First fetch existing to preserve IDs? We'll upsert
+    const { data: existing } = await supabase.from('products').select('id, network, size');
+    // Delete all then insert
+    await supabase.from('products').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    const { error } = await supabase.from('products').insert(rows);
+    if(error) throw error;
+    alert('Bundle Prices Saved & SYNCED to Supabase Cloud! '+rows.length+' bundles live now!');
+  }catch(e){
+    console.error(e);
+    alert('Saved locally, but Supabase sync failed: '+e.message+'\nCheck anonKey in Checkers & Settings');
+  }
+  render();
+}
 function saveCheckers(){ localStorage.setItem('raaj_checker_prices', JSON.stringify(checkerPrices)); localStorage.setItem('raaj_store_config', JSON.stringify(storeCfg)); alert('Checkers + Delivery Note + SMS Saved!'); render(); }
 
 // WALLET FUNCTIONS
