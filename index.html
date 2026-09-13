@@ -7,10 +7,19 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>body{font-family:Inter,system-ui} .font-syne{font-family:Syne}</style>
+<script>
+// === RAAJ CLOUD API - WORKING CONFIG ===
+const RAAJ_SUPABASE_URL = 'https://hvqhxfnhnqgxlasgllwf.supabase.co';
+const RAAJ_PUBLISHABLE_KEY = 'sb_publishable_ospxp3BnJYcQs_NexP-EQQ_63nDw9KG';
+const API_PRODUCTS = RAAJ_SUPABASE_URL + '/functions/v1/get-products';
+const API_CREATE_ORDER = RAAJ_SUPABASE_URL + '/functions/v1/create-order';
+const API_SEND_SMS = RAAJ_SUPABASE_URL + '/functions/v1/send-sms';
+</script>
 </head>
 <body class="bg-[#0a0a0a] text-white min-h-screen">
 <div id="app"></div>
 <div id="modals"></div>
+
 <script>
 const PRIMARY="https://cheapdata.shop/shop/raaj-data-services-1772546369430";
 const SECONDARY="https://agent.budgetdata.store/raajdataservices";
@@ -350,5 +359,88 @@ window.onload=init;
 window.buyBundle=buyBundle; window.buyChecker=buyChecker; window.submitAFA=submitAFA;
 window.showAgentLogin=showAgentLogin; window.showAgentRegister=showAgentRegister; window.registerAgent=registerAgent; window.agentLogin=agentLogin; window.agentLogout=agentLogout; window.requestWithdraw=requestWithdraw; window.copyRefLink=copyRefLink; window.render=render;
 </script>
+
+<script>
+// === RAAJ REAL CLOUD API - Fixed with your key ===
+const RAAJ_KEY = "sb_publishable_ospxp3BnJYcQs_NexP-EQQ_63nDw9KG";
+const RAAJ_URL = "https://hvqhxfnhnqgxlasgllwf.supabase.co";
+
+async function testCloudAPI() {
+  try {
+    const res = await fetch(RAAJ_URL + '/functions/v1/get-products', {
+      headers: { 'apikey': RAAJ_KEY, 'Authorization': 'Bearer ' + RAAJ_KEY }
+    });
+    const data = await res.json();
+    console.log('✅ Cloud API Response:', data);
+    if(data.success) {
+      console.log('✅ ' + data.count + ' products loaded from cloud!');
+    }
+    return data;
+  } catch(e) {
+    console.error('Cloud API error:', e);
+  }
+}
+// Auto test on load
+document.addEventListener('DOMContentLoaded', testCloudAPI);
+</script>
+
+
+<!-- === RAAJ FOOTER + WHATSAPP SUPPORT === -->
+<footer class='mt-16 bg-[#111] border-t border-white/10'>
+  <div class='mx-auto max-w-[1100px] px-4 py-10 grid md:grid-cols-4 gap-8'>
+    <div>
+      <div class='font-syne font-extrabold text-[18px]'><span class='text-yellow-400'>Raaj</span> Multimedia</div>
+      <p class='mt-3 text-[13px] text-zinc-400 leading-relaxed'>Ghana's trusted platform for cheap data bundles, result checkers & AFA registration. Fast, reliable, 24/7 support.</p>
+      <div class='mt-4 flex gap-2'>
+        <a href='https://wa.me/233241113791' target='_blank' class='h-8 px-3 rounded-full bg-[#25D366] text-black font-bold text-[11px] flex items-center gap-1'>WhatsApp</a>
+        <a href='tel:+233241113791' class='h-8 px-3 rounded-full bg-zinc-800 border border-white/10 font-bold text-[11px] flex items-center'>Call</a>
+      </div>
+    </div>
+    <div>
+      <div class='font-bold text-[12px] uppercase tracking-widest'>Services</div>
+      <div class='mt-3 space-y-2 text-[13px] text-zinc-400'>
+        <div>• MTN Data Bundles</div>
+        <div>• Telecel Data Bundles</div>
+        <div>• AirtelTigo Data Bundles</div>
+        <div>• WASSCE / BECE Checkers</div>
+        <div>• AFA Registration</div>
+      </div>
+    </div>
+    <div>
+      <div class='font-bold text-[12px] uppercase tracking-widest'>Contact</div>
+      <div class='mt-3 space-y-2 text-[13px] text-zinc-400'>
+        <div>📞 <b class='text-white'>0241113791</b> / 055XXXXXXX</div>
+        <div>💳 MoMo: <b class='text-white'>0241113791</b> - Mohammed Suraj</div>
+        <div>✉️ Email: raajmultimedia@gmail.com</div>
+        <div>📍 Ghana - Online 24/7</div>
+      </div>
+    </div>
+    <div>
+      <div class='font-bold text-[12px] uppercase tracking-widest'>Quick Help</div>
+      <div class='mt-3 space-y-2'>
+        <a href='https://wa.me/233241113791?text=Hello%20Raaj%2C%20I%20need%20help%20with%20my%20order' target='_blank' class='block h-10 rounded-xl bg-yellow-400 text-black font-bold text-[13px] flex items-center justify-center'>Chat Support</a>
+        <button onclick="document.getElementById('deliveryNote')?.scrollIntoView()" class='w-full h-10 rounded-xl bg-zinc-800 border border-white/10 font-bold text-[12px]'>Delivery Info</button>
+        <div class='text-[11px] text-zinc-500 mt-2'>Response time: &lt; 5 mins<br>Working: 6AM - 11PM Daily</div>
+      </div>
+    </div>
+  </div>
+  <div class='border-t border-white/10 py-4 text-center text-[11px] text-zinc-500'>
+    © 2026 Raaj Multimedia. All rights reserved. | Built with ❤️ in Ghana | <span class='text-yellow-400'>Fast • Cheap • Reliable</span>
+  </div>
+</footer>
+
+<!-- WhatsApp Floating Support Button -->
+<a id='waFloat' href='https://wa.me/233241113791?text=Hello%20Raaj%20Multimedia%2C%20I%20need%20help%20with%20data%20bundles' target='_blank' class='fixed bottom-[90px] right-4 md:bottom-6 md:right-6 z-[999] group'>
+  <div class='relative'>
+    <div class='absolute -top-10 right-0 bg-black border border-white/20 text-white text-[11px] px-3 py-1.5 rounded-full whitespace-nowrap opacity-0 group-hover:opacity-100 transition shadow-lg'>Chat on WhatsApp</div>
+    <div class='h-[56px] w-[56px] rounded-full bg-[#25D366] shadow-[0_10px_30px_rgba(37,211,102,0.4)] flex items-center justify-center text-[28px] animate-pulse'>💬</div>
+    <div class='absolute -top-1 -right-1 h-4 w-4 bg-red-500 rounded-full border-2 border-black flex items-center justify-center text-[9px] font-bold'>1</div>
+  </div>
+</a>
+
+<style>
+#waFloat:hover { transform: scale(1.05); }
+</style>
+
 </body>
 </html>
