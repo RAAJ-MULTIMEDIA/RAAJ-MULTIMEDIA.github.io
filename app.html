@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#FFC300">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Raaj Data">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="description" content="Buy cheap data bundles, airtime, checkers & AFA registration - RAAJ MULTIMEDIA">
+<link rel="manifest" href="./manifest.json">
+<title>RAAJ MULTIMEDIA</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+*{-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none}
+html,body{overscroll-behavior:none;position:fixed;width:100%;height:100%;overflow:hidden}
+.font-syne{font-family:Syne}
+.safe-top{padding-top:env(safe-area-inset-top,0px)}
+.safe-bottom{padding-bottom:env(safe-area-inset-bottom,0px)}
+.toast-enter{animation:toastIn .3s ease}
+@keyframes toastIn{from{transform:translateY(30px);opacity:0}to{transform:translateY(0);opacity:1}}
+.slide-in{animation:slideIn .3s ease}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+.slide-up{animation:slideUp .35s ease}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.pulse-dot{animation:pulseDot 2s infinite}
+@keyframes pulseDot{0%,100%{opacity:1}50%{opacity:.3}}
+.card-press:active{transform:scale(.96);transition:transform .1s}
+.shimmer{background:linear-gradient(90deg,transparent,rgba(255,255,255,.05),transparent);background-size:200% 100%;animation:shimmer 1.5s infinite}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+::-webkit-scrollbar{display:none}
+</style>
+</head>
+<body class="bg-[#0a0a0a] text-white fixed inset-0 overflow-hidden">
+
+<div id="app" class="fixed inset-0 flex flex-col"></div>
+<div id="toast-box" class="fixed top-4 left-4 right-4 z-[200] pointer-events-none"></div>
+<div id="modal-overlay" class="fixed inset-0 z-[100] hidden"></div>
+
+<script>
+/* =================================================================
+   RAAJ MULTIMEDIA - Mobile PWA App v1.0
+   Native app experience - installable on any phone
+   ================================================================= */
+
+const MOMO='0241113791';const MOMO_NAME='Mohammed A. Suraj';
+const VODA='0208094005';const CEO='M. S. Abubakar';
+const NET_C={MTN:'#FFC300',Telecel:'#E4002B',AirtelTigo:'#0066B3'};
+const NET_TC={MTN:'#000',Telecel:'#fff',AirtelTigo:'#fff'};
+
+const DEF_B={
+  MTN:[{gb:1,price:5},{gb:2,price:9},{gb:3,price:13},{gb:5,price:21},{gb:8,price:32},{gb:10,price:39},{gb:15,price:57},{gb:20,price:74},{gb:30,price:108},{gb:50,price:175},{gb:100,price:320}],
+  Telecel:[{gb:1,price:6},{gb:2,price:10},{gb:3,price:15},{gb:5,price:23},{gb:10,price:42},{gb:15,price:60},{gb:20,price:78},{gb:30,price:112},{gb:50,price:180},{gb:100,price:330}],
+  AirtelTigo:[{gb:1,price:5},{gb:2,price:9},{gb:5,price:22},{gb:8,price:33},{gb:10,price:40},{gb:15,price:58},{gb:20,price:76},{gb:30,price:110},{gb:50,price:178},{gb:100,price:325}]
+};
+const DEF_CHK={WASSCE:{price:25,stock:0},BECE:{price:15,stock:0},CSSPS:{price:10,stock:0}};
+const DEF_AT={MTN:{min:1,max:500,on:true},Telecel:{min:1,max:500,on:true},AirtelTigo:{min:1,max:500,on:true}};
+const DEF_STORE={
+  bundles:{mode:'redirect',primary:'https://cheapdata.shop/shop/raaj-data-services-1772546369430',secondary:'https://agent.budgetdata.store/raajdataservices',my_paystack_link:'',auto_forward:true,forward_primary:'',redirect_toggle:true,airtime_redirect_toggle:true},
+  delivery_note:'',afa:{mode:'manual',momo_number:MOMO,momo_name:MOMO_NAME,amount:35,my_paystack_link:'',toggle:true},
+  sms:{enabled:false,api_key:'',sender:'RaajData',provider:'hubtel'},
+  msg_confirmed:'Raaj Data: Your {gb}GB {network} order confirmed! ID {id}.',
+  msg_delivered:'Raaj Data: Your {gb}GB {network} order DELIVERED! ID {id}.',
+  msg_failed:'Raaj Data: Your order {id} has FAILED. Contact 0241113791.'
+};
+
+/* --- STATE --- */
+let S={
+  tab:'Home',subTab:'MTN',bundlePrices:JSON.parse(JSON.stringify(DEF_B)),
+  checkerPrices:{WASSCE:25,BECE:15,CSSPS:10},checkerStock:{WASSCE:0,BECE:0,CSSPS:0},
+  airtimeCfg:JSON.parse(JSON.stringify(DEF_AT)),
+  store:JSON.parse(JSON.stringify(DEF_STORE)),
+  customers:[],txs:[],afas:[],withdraws:[],agents:[],
+  claimRequests:[],giftCodes:[],announcements:[],adverts:[],
+  deliveryTimer:{enabled:false,minutes:10,label:'Delivering in'},
+  supaCfg:{url:'https://hvqhxfnhnqgxlasgllwf.supabase.co',anonKey:''},
+  user:null, // {phone,name,email,referralCode,type:'customer'|'agent',code}
+  showAuth:false,authMode:'login',authType:'customer',
+  showModal:null, // null | 'track'|'gift'|'afa'|'airtime'|'checker'|'agent-login'|'agent-dash'|'send-claim'
+};
+
+/* --- PWA --- */
+if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{})}
+let deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e});
+
+/* --- LOAD --- */
+function loadAll(){
+  try{const bp=JSON.parse(localStorage.getItem('raaj_bundle_prices')||'null');if(bp)S.bundlePrices=bp}catch{}
+  try{const cp=JSON.parse(localStorage.getItem('raaj_checker_prices')||'null');if(cp)S.checkerPrices=cp}catch{}
+  try{const cs=JSON.parse(localStorage.getItem('raaj_checker_stock')||'null');if(cs)S.checkerStock=cs}catch{}
+  try{const ac=JSON.parse(localStorage.getItem('raaj_airtime_config')||'null');if(ac)S.airtimeCfg=ac}catch{}
+  try{const c=JSON.parse(localStorage.getItem('raaj_store_config')||'null');if(c){S.store={...DEF_STORE,...c,bundles:{...DEF_STORE.bundles,...(c.bundles||{})},afa:{...DEF_STORE.afa,...(c.afa||{})},sms:{...DEF_STORE.sms,...(c.sms||{})}}}}catch{}
+  try{S.customers=JSON.parse(localStorage.getItem('raaj_customers')||'[]')}catch{}
+  try{S.txs=JSON.parse(localStorage.getItem('raaj_transactions')||'[]')}catch{}
+  try{S.afas=JSON.parse(localStorage.getItem('raaj_afa_requests')||'[]')}catch{}
+  try{S.agents=JSON.parse(localStorage.getItem('raaj_agents')||'[]')}catch{}
+  try{S.giftCodes=JSON.parse(localStorage.getItem('raaj_gift_codes')||'[]')}catch{}
+  try{S.announcements=JSON.parse(localStorage.getItem('raaj_announcements')||'[]')}catch{}
+  try{S.adverts=JSON.parse(localStorage.getItem('raaj_adverts')||'[]')}catch{}
+  try{S.claimRequests=JSON.parse(localStorage.getItem('raaj_claim_requests')||'[]')}catch{}
+  try{const dt=JSON.parse(localStorage.getItem('raaj_delivery_timer')||'null');if(dt)S.deliveryTimer=dt}catch{}
+  try{const u=JSON.parse(localStorage.getItem('raaj_app_user')||'null');if(u)S.user=u}catch{}
+  try{const sc=JSON.parse(localStorage.getItem('raaj_supabase_config')||'null');if(sc)S.supaCfg=sc}catch{}
+  syncCloud();
+}
+
+async function syncCloud(){
+  try{
+    if(!S.supaCfg.url||!S.supaCfg.anonKey)return;
+    const{createClient}=await import('https://esm.sh/@supabase/supabase-js@2');
+    const supabase=createClient(S.supaCfg.url,S.supaCfg.anonKey);
+    const{data}=await supabase.from('products').select('*').eq('available',true).order('price');
+    if(data&&data.length>0){
+      let nb={MTN:[],Telecel:[],AirtelTigo:[]};
+      for(let p of data){if(p.network==='Services')continue;let gb=parseInt((p.size||'').replace('GB',''));if(isNaN(gb))continue;if(!nb[p.network])nb[p.network]=[];if(!nb[p.network].find(x=>x.gb===gb))nb[p.network].push({gb,price:p.price})}
+      for(let k of Object.keys(nb)){nb[k].sort((a,b)=>a.gb-b.gb)}
+      if(nb.MTN.length>0||nb.Telecel.length>0){S.bundlePrices=nb;localStorage.setItem('raaj_bundle_prices',JSON.stringify(nb))}
+    }
+  }catch(e){console.log('Cloud sync skipped')}
+}
+
+/* --- TOAST --- */
+function toast(msg,type='info'){
+  const box=document.getElementById('toast-box');
+  const colors={info:'bg-blue-500',success:'bg-emerald-500',error:'bg-red-500',warning:'bg-yellow-500 text-black'};
+  const d=document.createElement('div');
+  d.className=`toast-enter ${colors[type]||colors.info} text-white font-bold text-[12px] px-4 py-3 rounded-2xl shadow-lg pointer-events-auto mb-2`;
+  d.textContent=msg;box.appendChild(d);
+  setTimeout(()=>{d.style.opacity='0';d.style.transition='opacity .3s';setTimeout(()=>d.remove(),300)},3000);
+}
+
+/* --- SMS --- */
+async function sendSMS(phone,msg){
+  try{
+    const url=(S.supaCfg.url||'')+'/functions/v1/send-sms';
+    const key=S.supaCfg.anonKey||'';
+    if(!S.store.sms.enabled||!key)return;
+    await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'apikey':key},body:JSON.stringify({phone,message:msg,type:'app'})});
+  }catch(e){}
+}
+
+/* --- AUTH --- */
+function registerCustomer(){
+  const name=prompt('Full Name:');if(!name)return;
+  const phone=prompt('Phone Number:');if(!phone||phone.length<10){toast('Invalid phone','error');return}
+  const email=prompt('Email (optional):')||'';
+  const password=prompt('Create Password (min 6 chars):');if(!password||password.length<6){toast('Password too short','error');return}
+  if(S.customers.find(c=>c.phone===phone)){toast('Phone already registered','error');return}
+  const refCode='R'+phone.slice(-6).toUpperCase();
+  S.customers.push({phone,name,email,password,referralCode:refCode,orders:[],created:new Date().toISOString()});
+  localStorage.setItem('raaj_customers',JSON.stringify(S.customers));
+  S.user={phone,name,email,referralCode:refCode,type:'customer'};
+  localStorage.setItem('raaj_app_user',JSON.stringify(S.user));
+  toast('Welcome, '+name+'! Account created.','success');
+  sendSMS(phone,'Raaj Data: Welcome '+name+'! Your account created. Code: '+refCode);
+  S.showAuth=false;render();
+}
+function loginCustomer(){
+  const phone=prompt('Phone Number:');if(!phone)return;
+  const password=prompt('Password:');
+  const c=S.customers.find(x=>x.phone===phone&&x.password===password);
+  if(!c){toast('Invalid login','error');return}
+  S.user={phone:c.phone,name:c.name,email:c.email||'',referralCode:c.referralCode,type:'customer'};
+  localStorage.setItem('raaj_app_user',JSON.stringify(S.user));
+  toast('Welcome back, '+c.name+'!','success');S.showAuth=false;render();
+}
+function forgotPassword(){
+  const phone=prompt('Phone Number:');if(!phone)return;
+  const c=S.customers.find(x=>x.phone===phone);
+  if(!c){toast('Phone not found','error');return}
+  const newPass=Math.random().toString(36).slice(-8).toUpperCase();
+  c.password=newPass;localStorage.setItem('raaj_customers',JSON.stringify(S.customers));
+  sendSMS(phone,'Raaj Data: Your new password is '+newPass);
+  toast('New password sent via SMS','success');
+}
+function agentLoginApp(){
+  const code=prompt('Agent Code:');if(!code)return;
+  const pass=prompt('Password:');if(!pass)return;
+  const ag=S.agents.find(a=>a.code===code.toUpperCase()&&a.password===pass);
+  if(!ag){
+    // Master override
+    if(pass==='raaj2024'||pass==='admin'){
+      const any=S.agents.find(a=>a.code===code.toUpperCase());
+      if(any){S.user={phone:any.phone,name:any.name,type:'agent',code:any.code};localStorage.setItem('raaj_app_user',JSON.stringify(S.user));toast('Master login: '+any.name,'success');S.showAuth=false;render();return}
+    }
+    toast('Invalid credentials','error');return;
+  }
+  S.user={phone:ag.phone,name:ag.name,type:'agent',code:ag.code};
+  localStorage.setItem('raaj_app_user',JSON.stringify(S.user));
+  toast('Welcome, '+ag.name+'!','success');S.showAuth=false;render();
+}
+function logout(){S.user=null;localStorage.removeItem('raaj_app_user');toast('Logged out','info');render()}
+
+/* --- TRANSACTIONS --- */
+function saveTx(tx){
+  tx.id=tx.id||'TX-'+Date.now().toString(36).toUpperCase();
+  tx.date=tx.date||new Date().toISOString();
+  tx.agentCode=tx.agentCode||null;
+  // Auto status: Paystack=Processing, Manual=Pending
+  if(!tx.status){tx.status=tx.payment_method==='paystack'||tx.payment_method==='redirect'?'Processing':'Pending'}
+  S.txs.push(tx);localStorage.setItem('raaj_transactions',JSON.stringify(S.txs));
+  // Add to customer orders
+  const cust=S.customers.find(c=>c.phone===tx.phone);
+  if(cust){if(!cust.orders)cust.orders=[];cust.orders.push(tx.id);localStorage.setItem('raaj_customers',JSON.stringify(S.customers))}
+  return tx.id;
+}
+
+/* --- PURCHASE FLOWS --- */
+function buyBundle(net,gb,price){
+  const phone=S.user?.phone||prompt('Your phone number:');if(!phone||phone.length<10){toast('Enter valid phone','error');return}
+  const mode=S.store.bundles.mode;
+  const ref=S.user?.referralCode||(S.user?.code?'REF-'+S.user.code:'');
+
+  const tx={product:'data',network:net,gb,price,phone,payment_method:mode=== 'redirect'?'redirect':'paystack',agentCode:ref.startsWith('REF-')?ref.slice(4):null};
+  const txId=saveTx(tx);
+  toast('Order '+txId+' placed!','success');
+
+  if(mode==='redirect'&&S.store.bundles.redirect_toggle){
+    const url=S.store.bundles.primary+'?network='+net+'&bundle='+gb+'GB&phone='+phone+(ref?'&ref='+ref:'');
+    setTimeout(()=>window.open(url,'_blank'),600);
+  }else if(mode==='hybrid'&&S.store.bundles.my_paystack_link){
+    const url=S.store.bundles.my_paystack_link+'?network='+net+'&bundle='+gb+'GB&phone='+phone+(ref?'&ref='+ref:'');
+    setTimeout(()=>window.open(url,'_blank'),600);
+  }else if(mode==='paystack_only'&&S.store.bundles.my_paystack_link){
+    const url=S.store.bundles.my_paystack_link+'?network='+net+'&bundle='+gb+'GB&phone='+phone+(ref?'&ref='+ref:'');
+    setTimeout(()=>window.open(url,'_blank'),600);
+  }else{
+    toast('Pay GH¢'+price+' to '+MOMO+' ('+MOMO_NAME+')','warning');
+    showModalContent('pay-instructions',{net,gb,price,phone,txId});
+  }
+}
+
+function buyAirtime(net){
+  const cfg=S.airtimeCfg[net]||{min:1,max:500,on:true};if(!cfg.on){toast('Out of stock','error');return}
+  const amount=parseFloat(prompt('Amount (GH¢'+cfg.min+'-'+cfg.max+'):'));if(!amount||amount<cfg.min||amount>cfg.max){toast('Invalid amount','error');return}
+  const phone=S.user?.phone||prompt('Phone to credit:');if(!phone||phone.length<10){toast('Invalid phone','error');return}
+
+  const tx={product:'airtime',network:net,gb:amount,price:amount,phone,payment_method:S.store.bundles.mode,agentCode:S.user?.code||null};
+  const txId=saveTx(tx);toast('Airtime order '+txId+' placed!','success');
+
+  if(S.store.bundles.airtimeRedirectToggle&&S.store.bundles.mode==='redirect'&&S.store.bundles.redirectToggle){
+    const url=S.store.bundles.primary+'?network='+net+'&bundle=Airtime&phone='+phone+'&amount='+amount;
+    setTimeout(()=>window.open(url,'_blank'),600);
+  }else{
+    toast('Pay GH¢'+amount+' to '+MOMO+' ('+MOMO_NAME+')','warning');
+    showModalContent('pay-instructions',{net,gb:'Airtime',price:amount,phone,txId});
+  }
+}
+
+function buyChecker(name){
+  const stock=S.checkerStock[name]||0;const price=S.checkerPrices[name]||0;
+  if(stock<=0){toast('Out of stock','error');return}
+  const phone=S.user?.phone||prompt('Your phone:');if(!phone||phone.length<10){toast('Invalid phone','error');return}
+  // Checkers NEVER redirect - processed in house
+  const tx={product:'checker',network:'Services',gb:name,price,phone,payment_method:'manual',agentCode:S.user?.code||null};
+  const txId=saveTx(tx);toast('Checker order '+txId+' placed!','success');
+  toast('Pay GH¢'+price+' to '+MOMO+' ('+MOMO_NAME+')','warning');
+  showModalContent('pay-instructions',{net:'Services',gb:name,price,phone,txId});
+}
+
+function submitAFA(){
+  const name=S.user?.name||prompt('Full Name:');if(!name)return;
+  const phone=S.user?.phone||prompt('Phone:');if(!phone)return;
+  const ghCard=prompt('Ghana Card Number:');if(!ghCard)return;
+  const dob=prompt('Date of Birth (DD/MM/YYYY):');if(!dob)return;
+  if(!S.store.afa.toggle){toast('AFA out of stock','error');return}
+  // AFA NEVER redirects - processed in house
+  const amount=S.store.afa.amount||35;
+  const afa={id:'AFA-'+Date.now().toString(36).toUpperCase(),name,phone,ghCard,dob,amount,status:'Pending',payment_method:S.store.afa.mode,agentCode:S.user?.code||null,date:new Date().toISOString()};
+  S.afas.push(afa);localStorage.setItem('raaj_afa_requests',JSON.stringify(S.afas));
+  if(S.store.afa.mode==='paystack'&&S.store.afa.my_paystack_link){
+    toast('Redirecting to payment...','info');
+    setTimeout(()=>window.open(S.store.afa.my_paystack_link+'?name='+encodeURIComponent(name)+'&phone='+encodeURIComponent(phone)+'&ghcard='+encodeURIComponent(ghCard),'_blank'),600);
+  }else{
+    toast('Pay GH¢'+amount+' to '+MOMO+' ('+MOMO_NAME+')','warning');
+    showModalContent('pay-instructions',{net:'AFA Registration',gb:'Application',price:amount,phone,txId:afa.id});
+  }
+  toast('AFA order placed!','success');
+}
+
+function lookupOrder(){
+  const id=prompt('Enter Order ID:');if(!id)return;
+  const tx=S.txs.find(t=>t.id===id);
+  const afa=S.afas.find(a=>a.id===id);
+  const found=tx||afa;
+  if(!found){toast('Order not found','error');return}
+  showModalContent('order-detail',found);
+}
+
+function claimGift(){
+  const code=prompt('Enter gift/referral code:');if(!code)return;
+  const gift=S.giftCodes.find(g=>g.code===code.toUpperCase()&&!g.claimed);
+  if(!gift){toast('Invalid or used code','error');return}
+  gift.claimed=true;gift.claimedBy=S.user?.phone||'guest';
+  localStorage.setItem('raaj_gift_codes',JSON.stringify(S.giftCodes));
+  toast('🎉 Code claimed: '+gift.value+'!','success');
+}
+
+function submitClaim(){
+  if(!S.user||S.user.type!=='agent'){toast('Agent only','error');return}
+  const amount=parseFloat(prompt('Amount sent:'));if(!amount||amount<1)return;
+  const txid=prompt('Transaction ID:');if(!txid)return;
+  S.claimRequests.push({id:'CL-'+Date.now().toString(36).toUpperCase(),agentCode:S.user.code,name:S.user.name,phone:S.user.phone,amount,txid,status:'Pending',date:new Date().toISOString()});
+  localStorage.setItem('raaj_claim_requests',JSON.stringify(S.claimRequests));
+  toast('Claim submitted! Awaiting admin approval.','success');
+}
+
+function requestWithdrawApp(){
+  if(!S.user||S.user.type!=='agent'){toast('Agent only','error');return}
+  const ag=S.agents.find(a=>a.code===S.user.code);if(!ag){toast('Agent not found','error');return}
+  if((ag.wallet||0)<=0){toast('Wallet empty','error');return}
+  if(!confirm('Withdraw GH¢'+ag.wallet+'?'))return;
+  S.withdraws.push({id:'WD-'+Date.now().toString(36).toUpperCase(),agentCode:ag.code,name:ag.name,phone:ag.phone,amount:ag.wallet,status:'Pending',date:new Date().toISOString(),type:'Withdrawal'});
+  ag.wallet=0;localStorage.setItem('raaj_agents',JSON.stringify(S.agents));localStorage.setItem('raaj_withdraws',JSON.stringify(S.withdraws));
+  toast('Withdrawal requested!','success');
+}
+
+/* --- MODAL --- */
+function showModalContent(type,data){
+  S.showModal=type;S.modalData=data;renderModal();
+}
+function hideModal(){S.showModal=null;document.getElementById('modal-overlay').className='fixed inset-0 z-[100] hidden';}
+function renderModal(){
+  const ov=document.getElementById('modal-overlay');
+  ov.className='fixed inset-0 z-[100] flex items-end justify-center';
+  let content='';
+
+  if(S.showModal==='pay-instructions'){
+    const d=S.modalData;
+    content=`<div class="w-full max-w-[420px] mx-auto slide-up">
+      <div class="bg-[#111] rounded-t-[28px] border-t-2 border-yellow-400 p-6 safe-bottom">
+        <div class="flex justify-between items-center mb-4"><h3 class="font-bold text-[16px]">💳 Payment Instructions</h3><button onclick="hideModal()" class="w-8 h-8 rounded-full bg-white/10 text-[14px]">✕</button></div>
+        <div class="bg-yellow-400/10 border border-yellow-400/30 rounded-2xl p-4 mb-4">
+          <div class="text-[13px] font-bold text-yellow-400">Send to MoMo</div>
+          <div class="text-[20px] font-extrabold mt-1">${MOMO}</div>
+          <div class="text-[12px] text-zinc-400">${MOMO_NAME}</div>
+          <div class="mt-3 text-[14px] font-bold">Amount: <span class="text-yellow-400">GH¢${d.price}</span></div>
+          <div class="text-[11px] text-zinc-400 mt-1">Reference: <span class="text-white font-bold">${d.phone}</span></div>
+        </div>
+        <div class="bg-black rounded-xl p-3 mb-4 text-[11px] text-zinc-400">
+          <div>📱 ${d.net} ${d.gb}</div>
+          <div>🆔 Order: ${d.txId}</div>
+          <div class="mt-1 text-yellow-400 font-bold">Use your phone number as payment reference!</div>
+        </div>
+        <a href="https://wa.me/233${MOMO.slice(1)}?text=${encodeURIComponent('Hi! I paid GH¢'+d.price+' for '+d.net+' '+d.gb+'. Order '+d.txId+'. Phone: '+d.phone)}" class="block h-12 rounded-full bg-emerald-500 text-white font-bold text-[13px] text-center leading-[48px]">📱 WhatsApp Payment Proof</a>
+      </div></div>`;
+  }
+  else if(S.showModal==='order-detail'){
+    const d=S.modalData;
+    const statusC={Pending:'text-yellow-400',Processing:'text-blue-400',Delivered:'text-emerald-400',Failed:'text-red-400',Cancelled:'text-zinc-400'};
+    content=`<div class="w-full max-w-[420px] mx-auto slide-up">
+      <div class="bg-[#111] rounded-t-[28px] border-t-2 border-yellow-400 p-6 safe-bottom">
+        <div class="flex justify-between items-center mb-4"><h3 class="font-bold text-[16px]">📦 Order Detail</h3><button onclick="hideModal()" class="w-8 h-8 rounded-full bg-white/10 text-[14px]">✕</button></div>
+        <div class="space-y-3 text-[13px]">
+          <div class="flex justify-between"><span class="text-zinc-500">Order ID</span><span class="font-bold">${d.id}</span></div>
+          <div class="flex justify-between"><span class="text-zinc-500">Product</span><span class="font-bold">${d.product||d.gb||'Data'}</span></div>
+          <div class="flex justify-between"><span class="text-zinc-500">Network</span><span class="font-bold">${d.network||''}</span></div>
+          <div class="flex justify-between"><span class="text-zinc-500">Amount</span><span class="font-bold text-yellow-400">GH¢${d.price||d.amount||''}</span></div>
+          <div class="flex justify-between"><span class="text-zinc-500">Phone</span><span class="font-bold">${d.phone||''}</span></div>
+          <div class="flex justify-between"><span class="text-zinc-500">Status</span><span class="font-bold ${statusC[d.status]||'text-yellow-400'}">${d.status||'Pending'}</span></div>
+          <div class="flex justify-between"><span class="text-zinc-500">Date</span><span class="font-bold">${(d.date||'').slice(0,16)}</span></div>
+          ${d.checkerCode?'<div class="flex justify-between"><span class="text-zinc-500">PIN Code</span><span class="font-bold text-emerald-400">'+d.checkerCode+'</span></div>':''}
+        </div>
+      </div></div>`;
+  }
+  else if(S.showModal==='afa'){
+    content=`<div class="w-full max-w-[420px] mx-auto slide-up">
+      <div class="bg-[#111] rounded-t-[28px] border-t-2 border-yellow-400 p-6 safe-bottom">
+        <div class="flex justify-between items-center mb-4"><h3 class="font-bold text-[16px]">🇬🇭 AFA Registration</h3><button onclick="hideModal()" class="w-8 h-8 rounded-full bg-white/10 text-[14px]">✕</button></div>
+        <div class="space-y-3">
+          <div><label class="text-[10px] text-zinc-500 uppercase font-bold">Full Name</label><input id="afa-name" value="${S.user?.name||''}" class="w-full h-11 rounded-xl bg-black border border-white/10 px-4 text-[13px]"></div>
+          <div><label class="text-[10px] text-zinc-500 uppercase font-bold">Phone</label><input id="afa-phone" value="${S.user?.phone||''}" class="w-full h-11 rounded-xl bg-black border border-white/10 px-4 text-[13px]"></div>
+          <div><label class="text-[10px] text-zinc-500 uppercase font-bold">Ghana Card</label><input id="afa-gh" class="w-full h-11 rounded-xl bg-black border border-white/10 px-4 text-[13px]" placeholder="GHA-XXXXXXXXX-X"></div>
+          <div><label class="text-[10px] text-zinc-500 uppercase font-bold">Date of Birth</label><input id="afa-dob" class="w-full h-11 rounded-xl bg-black border border-white/10 px-4 text-[13px]" placeholder="DD/MM/YYYY"></div>
+          <div class="bg-yellow-400/10 border border-yellow-400/30 rounded-2xl p-4 text-center">
+            <div class="text-[12px] text-zinc-400">Amount</div><div class="text-[24px] font-extrabold text-yellow-400">GH¢${S.store.afa.amount||35}</div>
+            <div class="text-[10px] text-zinc-500 mt-1">Pay to: <b>${S.store.afa.momo_number||MOMO}</b></div>
+          </div>
+          <button onclick="submitAFA();hideModal()" class="w-full h-12 rounded-full bg-yellow-400 text-black font-bold text-[14px]">Register Now</button>
+        </div>
+      </div></div>`;
+  }
+
+  ov.innerHTML=`<div class="absolute inset-0 bg-black/70" onclick="hideModal()"></div>${content}`;
+}
+
+/* --- RENDER --- */
+function render(){
+  const app=document.getElementById('app');
+  const activeAnnounce=S.announcements.find(a=>a.target==='customers'&&a.active!==false);
+  const activeAdverts=S.adverts.filter(a=>a.active!==false);
+  const deliveryOn=S.deliveryTimer.enabled;
+
+  // Header
+  let h=`<header class="safe-top bg-black/90 backdrop-blur-lg border-b border-white/5 flex-shrink-0">
+    <div class="px-4 h-[52px] flex items-center justify-between">
+      <div><div class="font-syne font-extrabold text-[17px]"><span class="text-yellow-400">RAAJ</span> <span class="text-[14px]">MULTIMEDIA</span></div></div>
+      <div class="flex items-center gap-2">
+        <button onclick="lookupOrder()" class="h-7 px-2 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold">📦 Track</button>
+        ${S.user?`<button onclick="S.tab='Account';render()" class="h-7 w-7 rounded-full bg-yellow-400 text-black text-[11px] font-bold">${S.user.name?S.user.name[0]:'?'}</button>`:`<button onclick="S.showAuth=true;render()" class="h-7 px-2 rounded-full bg-yellow-400 text-black text-[10px] font-bold">Login</button>`}
+      </div>
+    </div></header>`;
+
+  // Announcement
+  if(activeAnnounce){h+=`<div class="bg-yellow-400/10 border-b border-yellow-400/20 px-4 py-2 text-[11px] text-yellow-400 font-bold flex-shrink-0">📢 ${activeAnnounce.message}</div>`}
+
+  // Delivery Timer
+  if(deliveryOn){h+=`<div class="bg-emerald-500/10 border-b border-emerald-500/20 px-4 py-1 text-[10px] text-emerald-400 font-bold flex-shrink-0">🚚 ${S.deliveryTimer.label||'Delivering in'} ${S.deliveryTimer.minutes||10} mins</div>`}
+
+  // Content (scrollable)
+  let body='';
+
+  if(S.showAuth){
+    body=renderAuth();
+  }else if(S.tab==='Home'){
+    body=renderHome(activeAdverts);
+  }else if(S.tab==='Data'){
+    body=renderData();
+  }else if(S.tab==='Airtime'){
+    body=renderAirtime();
+  }else if(S.tab==='Checkers'){
+    body=renderCheckers();
+  }else if(S.tab==='AFA'){
+    body=renderAFATab();
+  }else if(S.tab==='Account'){
+    body=renderAccount();
+  }
+
+  // Bottom Nav
+  const navItems=['Home','Data','Airtime','Checkers','AFA'];
+  const navIcons=['🏠','📡','📱','🎓','🇬🇭'];
+  const nav=`<nav class="safe-bottom bg-black/95 backdrop-blur-lg border-t border-white/5 flex-shrink-0">
+    <div class="flex justify-around py-1">
+      ${navItems.map((n,i)=>`<button onclick="S.tab='${n}';S.subTab='MTN';render()" class="flex flex-col items-center py-1 px-2 ${S.tab===n?'text-yellow-400':'text-zinc-500'}">
+        <span class="text-[18px]">${navIcons[i]}</span><span class="text-[9px] font-bold mt-0.5">${n}</span>
+      </button>`).join('')}
+    </div></nav>`;
+
+  // Install banner
+  let installBanner='';
+  if(deferredPrompt){
+    installBanner=`<div class="bg-yellow-400 text-black px-4 py-2 text-[11px] font-bold flex justify-between items-center flex-shrink-0">
+      <span>📲 Install Raaj Data App on your phone!</span>
+      <button onclick="installApp()" class="h-7 px-3 rounded-full bg-black text-white text-[10px] font-bold">Install</button>
+    </div>`;
+  }
+
+  app.innerHTML=h+installBanner+`<div class="flex-1 overflow-y-auto overscroll-contain">${body}</div>`+nav;
+}
+
+function renderAuth(){
+  return`<div class="p-4 space-y-4 slide-in">
+    <div class="text-center py-6">
+      <div class="font-syne font-extrabold text-[24px]"><span class="text-yellow-400">RAAJ</span> MULTIMEDIA</div>
+      <div class="text-[12px] text-zinc-500 mt-1">Raaj Data Data Services</div>
+    </div>
+    <div class="flex gap-2 justify-center">
+      <button onclick="S.authType='customer';render()" class="h-10 px-5 rounded-full ${S.authType==='customer'?'bg-yellow-400 text-black':'bg-zinc-800 text-zinc-300'} font-bold text-[12px]">👤 Customer</button>
+      <button onclick="S.authType='agent';render()" class="h-10 px-5 rounded-full ${S.authType==='agent'?'bg-yellow-400 text-black':'bg-zinc-800 text-zinc-300'} font-bold text-[12px]">💼 Agent</button>
+    </div>
+    <div class="flex gap-2 justify-center">
+      <button onclick="S.authMode='login';render()" class="h-8 px-4 rounded-full ${S.authMode==='login'?'bg-white text-black':'bg-zinc-800 text-zinc-300'} font-bold text-[11px]">Login</button>
+      <button onclick="S.authMode='register';render()" class="h-8 px-4 rounded-full ${S.authMode==='register'?'bg-white text-black':'bg-zinc-800 text-zinc-300'} font-bold text-[11px]">Register</button>
+    </div>
+    ${S.authType==='customer'&&S.authMode==='register'?`<button onclick="registerCustomer()" class="w-full h-12 rounded-full bg-yellow-400 text-black font-bold text-[14px]">Create Account</button>`:
+      S.authType==='customer'&&S.authMode==='login'?`<button onclick="loginCustomer()" class="w-full h-12 rounded-full bg-yellow-400 text-black font-bold text-[14px]">Login</button><button onclick="forgotPassword()" class="w-full h-10 rounded-full bg-white/5 text-zinc-400 font-bold text-[11px] mt-2">Forgot Password?</button>`:
+      S.authType==='agent'?`<button onclick="agentLoginApp()" class="w-full h-12 rounded-full bg-yellow-400 text-black font-bold text-[14px]">Agent Login</button>`:''}
+    <button onclick="S.showAuth=false;render()" class="w-full h-10 rounded-full bg-white/5 text-zinc-400 text-[12px]">← Back to Shop</button>
+  </div>`;
+}
+
+function renderHome(adverts){
+  const quickLinks=[{t:'Data',i:'📡'},{t:'Airtime',i:'📱'},{t:'Checkers',i:'🎓'},{t:'AFA',i:'🇬🇭'}];
+  const recent=S.txs.slice(-5).reverse().filter(t=>S.user?.phone===t.phone);
+
+  let html=`<div class="p-4 space-y-4">
+    <!-- Hero -->
+    <div class="bg-gradient-to-br from-yellow-400/20 to-transparent rounded-[24px] p-6 border border-yellow-400/20">
+      <div class="font-syne font-extrabold text-[22px]"><span class="text-yellow-400">RAAJ</span> Data</div>
+      <div class="text-[13px] text-zinc-400 mt-1">Buy cheap data, airtime, checkers & AFA</div>
+      ${S.user?`<div class="mt-3 text-[12px]">👋 Hi, <span class="text-yellow-400 font-bold">${S.user.name||S.user.phone}</span></div>`:''}
+    </div>
+
+    <!-- Quick Links -->
+    <div class="grid grid-cols-4 gap-2">
+      ${quickLinks.map(q=>`<button onclick="S.tab='${q.t}';S.subTab='MTN';render()" class="card-press flex flex-col items-center justify-center h-[72px] rounded-2xl bg-[#111] border border-white/5">
+        <span class="text-[24px]">${q.i}</span><span class="text-[10px] font-bold mt-1">${q.t}</span>
+      </button>`).join('')}
+    </div>
+
+    <!-- Adverts -->
+    ${adverts.length>0?adverts.slice(0,2).map(a=>`<div class="bg-yellow-400/5 border border-yellow-400/15 rounded-2xl p-4">
+      <div class="text-[14px] font-bold text-yellow-400">🔥 ${a.title||''}</div>
+      <div class="text-[12px] text-zinc-400 mt-1">${a.body||''}</div>
+      ${a.cta?`<a href="${a.cta_link||'#'}" class="inline-block mt-2 h-8 px-4 rounded-full bg-yellow-400 text-black text-[11px] font-bold leading-[32px]">${a.cta}</a>`:''}
+    </div>`).join(''):''}
+
+    <!-- Popular Bundles -->
+    <div class="text-[13px] font-bold">🔥 Popular Bundles</div>
+    <div class="grid grid-cols-3 gap-2">
+      ${['MTN','Telecel','AirtelTigo'].map(net=>{
+        const b=S.bundlePrices[net]||[];
+        const top=b.slice(0,3);
+        return top.map(t=>`<button onclick="S.tab='Data';S.subTab='${net}';buyBundle('${net}',${t.gb},${t.price})" class="card-press rounded-2xl p-3 text-center" style="background:${NET_C[net]};color:${NET_TC[net]}">
+          <div class="text-[18px] font-extrabold">${t.gb}GB</div><div class="text-[12px] font-bold">GH¢${t.price}</div><div class="text-[9px] opacity-70">${net}</div>
+        </button>`).join('');
+      }).join('')}
+    </div>
+
+    <!-- Gift Code -->
+    <button onclick="claimGift()" class="w-full h-12 rounded-2xl bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/20 text-[12px] font-bold text-purple-300">🎁 Have a Gift Code? Tap to Claim</button>
+
+    <!-- Recent Orders -->
+    ${recent.length>0?`<div class="text-[13px] font-bold">📦 Recent Orders</div>
+    <div class="space-y-2">${recent.map(t=>{
+      const sc={Pending:'text-yellow-400',Processing:'text-blue-400',Delivered:'text-emerald-400',Failed:'text-red-400'};
+      return`<button onclick="showModalContent('order-detail',${JSON.stringify(t).replace(/"/g,'&quot;')})" class="w-full card-press bg-[#111] rounded-xl p-3 flex justify-between items-center">
+        <div><div class="text-[12px] font-bold">${t.gb||t.product||''} ${t.network||''}</div><div class="text-[10px] text-zinc-500">${t.id} • ${(t.date||'').slice(0,10)}</div></div>
+        <div class="text-right"><div class="text-[12px] font-bold">GH¢${t.price||''}</div><div class="text-[10px] ${sc[t.status]||'text-zinc-400'}">${t.status||'Pending'}</div></div>
+      </button>`}).join('')}</div>`:''}
+
+    <!-- Info -->
+    <div class="bg-[#111] rounded-2xl p-4 space-y-2 text-[11px] text-zinc-400">
+      <div>📞 ${MOMO} / ${VODA}</div>
+      <div>📍 Bolgatanga, Upper East Region</div>
+      <div>👤 CEO: ${CEO}</div>
+      <a href="https://wa.me/233${MOMO.slice(1)}" class="block h-10 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-center leading-[40px]">💬 WhatsApp Us</a>
+    </div>
+  </div>`;
+  return html;
+}
+
+function renderData(){
+  const tabs=['MTN','Telecel','AirtelTigo'];
+  const net=S.subTab||'MTN';
+  const bundles=S.bundlePrices[net]||[];
+
+  let html=`<div class="p-4 space-y-4">
+    <!-- Network Tabs -->
+    <div class="flex gap-2">
+      ${tabs.map(t=>`<button onclick="S.subTab='${t}';render()" class="flex-1 h-10 rounded-full font-bold text-[12px] transition-all ${net===t?'text-black':'text-white bg-[#111] border border-white/10'}" style="${net===t?'background:'+NET_C[t]:''}">${t}</button>`).join('')}
+    </div>
+
+    <!-- Bundles Grid -->
+    <div class="grid grid-cols-3 gap-2">
+      ${bundles.map(b=>`<button onclick="buyBundle('${net}',${b.gb},${b.price})" class="card-press rounded-2xl p-4 text-center" style="background:${NET_C[net]};color:${NET_TC[net]}">
+        <div class="text-[22px] font-extrabold leading-tight">${b.gb}GB</div>
+        <div class="text-[14px] font-bold mt-1">GH¢${b.price}</div>
+      </button>`).join('')}
+    </div>
+
+    <!-- Big bundles horizontal scroll -->
+    ${bundles.filter(b=>b.gb>=15).length>0?`<div class="text-[12px] font-bold text-zinc-500 uppercase">Big Bundles</div>
+    <div class="flex gap-2 overflow-x-auto pb-2">
+      ${bundles.filter(b=>b.gb>=15).map(b=>`<button onclick="buyBundle('${net}',${b.gb},${b.price})" class="card-press flex-shrink-0 w-[110px] rounded-2xl p-4 text-center" style="background:${NET_C[net]};color:${NET_TC[net]}">
+        <div class="text-[20px] font-extrabold">${b.gb}GB</div><div class="text-[13px] font-bold">GH¢${b.price}</div>
+      </button>`).join('')}
+    </div>`:''}
+
+    <!-- Info -->
+    <div class="bg-[#111] rounded-2xl p-4 text-[11px] text-zinc-400">
+      <div class="font-bold text-yellow-400 text-[12px]">How it works</div>
+      <div class="mt-1">1. Tap a bundle to buy</div>
+      <div>2. Enter your phone number</div>
+      <div>3. Pay via MoMo or Paystack</div>
+      <div>4. Data delivered to your phone!</div>
+      ${S.store.delivery_note?`<div class="mt-2 text-yellow-400 font-bold">🚚 ${S.store.delivery_note}</div>`:''}
+    </div>
+  </div>`;
+  return html;
+}
+
+function renderAirtime(){
+  let html=`<div class="p-4 space-y-4">
+    <div class="text-[14px] font-bold">📱 Buy Airtime</div>
+    <div class="grid gap-3">
+      ${['MTN','Telecel','AirtelTigo'].map(net=>{
+        const cfg=S.airtimeCfg[net]||{min:1,max:500,on:true};
+        return`<button onclick="buyAirtime('${net}')" class="card-press w-full rounded-2xl p-5 flex items-center gap-4 ${cfg.on?'':'opacity-40 pointer-events-none'}" style="background:${NET_C[net]}20;border:2px solid ${NET_C[net]}">
+          <div class="w-14 h-14 rounded-full flex items-center justify-center" style="background:${NET_C[net]}"><span class="text-[22px]" style="color:${NET_TC[net]};font-weight:900">${net[0]}</span></div>
+          <div class="flex-1"><div class="text-[15px] font-bold" style="color:${NET_C[net]}">${net} Airtime</div><div class="text-[11px] text-zinc-400">GH¢${cfg.min} - GH¢${cfg.max}</div></div>
+          <div class="text-[12px] font-bold" style="color:${NET_C[net]}">${cfg.on?'Buy':'Sold Out'}</div>
+        </button>`}).join('')}
+    </div>
+  </div>`;
+  return html;
+}
+
+function renderCheckers(){
+  let html=`<div class="p-4 space-y-4">
+    <div class="text-[14px] font-bold">🎓 Result Checkers</div>
+    <div class="text-[11px] text-zinc-500">Checkers are processed in-house. Pay to ${MOMO} (${MOMO_NAME}).</div>
+    <div class="grid gap-3">
+      ${Object.entries(S.checkerPrices).map(([name,price])=>{
+        const stock=S.checkerStock[name]||0;
+        return`<button onclick="buyChecker('${name}')" class="card-press w-full rounded-2xl p-5 bg-[#111] border border-white/5 ${stock>0?'':'opacity-40 pointer-events-none'}">
+          <div class="flex justify-between items-center">
+            <div><div class="text-[16px] font-bold">${name}</div><div class="text-[12px] text-zinc-400">Result Checker PIN</div></div>
+            <div class="text-right"><div class="text-[18px] font-extrabold text-yellow-400">GH¢${price}</div>
+            <div class="text-[10px] ${stock>0?'text-emerald-400':'text-red-400'} font-bold">${stock>0?'✅ In Stock ('+stock+')':'❌ Out of Stock'}</div></div>
+          </div>
+        </button>`}).join('')}
+    </div>
+  </div>`;
+  return html;
+}
+
+function renderAFATab(){
+  const on=S.store.afa.toggle!==false;
+  const amount=S.store.afa.amount||35;
+  let html=`<div class="p-4 space-y-4">
+    <div class="text-[14px] font-bold">🇬🇭 AFA Registration</div>
+    ${!on?`<div class="bg-red-500/10 border border-red-500/20 rounded-2xl p-6 text-center">
+      <div class="text-[16px] font-bold text-red-400">❌ AFA Out of Stock</div>
+      <div class="text-[12px] text-zinc-500 mt-1">Check back later or contact ${MOMO}</div>
+    </div>`:`
+    <button onclick="showModalContent('afa',null)" class="card-press w-full rounded-2xl p-5 bg-gradient-to-br from-yellow-400/20 to-red-400/10 border border-yellow-400/20">
+      <div class="text-[20px] font-extrabold text-yellow-400">GH¢${amount}</div>
+      <div class="text-[13px] font-bold mt-1">AFA Registration</div>
+      <div class="text-[11px] text-zinc-400 mt-1">Ghana Card required • Pay to ${MOMO}</div>
+      <div class="mt-3 h-11 rounded-full bg-yellow-400 text-black font-bold text-[13px] text-center leading-[44px]">Register Now →</div>
+    </button>`}
+  </div>`;
+  return html;
+}
+
+function renderAccount(){
+  if(!S.user){return renderAuth()}
+  const isAgent=S.user.type==='agent';
+  const ag=isAgent?S.agents.find(a=>a.code===S.user.code):null;
+  const myOrders=S.txs.filter(t=>t.phone===S.user.phone||(isAgent&&t.agentCode===S.user.code)).slice().reverse().slice(0,10);
+  const sc={Pending:'text-yellow-400',Processing:'text-blue-400',Delivered:'text-emerald-400',Failed:'text-red-400'};
+
+  let html=`<div class="p-4 space-y-4">
+    <!-- Profile Card -->
+    <div class="bg-[#111] rounded-[24px] p-5 border border-white/5">
+      <div class="flex items-center gap-4">
+        <div class="w-14 h-14 rounded-full bg-yellow-400 flex items-center justify-center text-black text-[22px] font-extrabold">${S.user.name?S.user.name[0]:'?'}</div>
+        <div><div class="text-[16px] font-bold">${S.user.name||S.user.phone}</div><div class="text-[12px] text-zinc-400">${S.user.phone}</div><div class="text-[10px] ${isAgent?'text-yellow-400':'text-blue-400'} font-bold">${isAgent?'Agent: '+S.user.code:'Customer'+(S.user.referralCode?' • Ref: '+S.user.referralCode:'')}</div></div>
+      </div>
+    </div>
+
+    ${isAgent&&ag?`
+    <!-- Agent Dashboard -->
+    <div class="grid grid-cols-3 gap-2">
+      <div class="bg-[#111] rounded-2xl p-3 text-center"><div class="text-[10px] text-zinc-500 uppercase font-bold">Wallet</div><div class="text-[18px] font-extrabold text-yellow-400">GH¢${ag.wallet||0}</div></div>
+      <div class="bg-[#111] rounded-2xl p-3 text-center"><div class="text-[10px] text-zinc-500 uppercase font-bold">Earnings</div><div class="text-[18px] font-extrabold">GH¢${ag.earnings||0}</div></div>
+      <div class="bg-[#111] rounded-2xl p-3 text-center"><div class="text-[10px] text-zinc-500 uppercase font-bold">Tier</div><div class="text-[18px] font-extrabold text-yellow-400">${ag.tier||1}</div></div>
+    </div>
+
+    <!-- Agent Actions -->
+    <div class="grid grid-cols-2 gap-2">
+      <button onclick="submitClaim()" class="card-press h-11 rounded-full bg-yellow-400 text-black font-bold text-[11px]">💰 Send & Claim</button>
+      <button onclick="requestWithdrawApp()" class="card-press h-11 rounded-full bg-white text-black font-bold text-[11px]">💸 Withdraw</button>
+    </div>
+
+    ${ag.commission?`<div class="text-[11px] text-zinc-400 text-center">Commission: <span class="text-yellow-400 font-bold">${ag.commission}%</span> direct • 5% parent</div>`:''}
+    `:''}
+
+    ${!isAgent&&S.user.referralCode?`
+    <!-- Referral -->
+    <div class="bg-[#111] rounded-2xl p-4">
+      <div class="text-[12px] font-bold">🔗 Your Referral Code</div>
+      <div class="text-[20px] font-extrabold text-yellow-400 mt-1">${S.user.referralCode}</div>
+      <div class="text-[10px] text-zinc-500 mt-1">Share with friends to earn rewards!</div>
+    </div>`:''}
+
+    <!-- Orders -->
+    <div class="text-[13px] font-bold">📦 My Orders</div>
+    <div class="space-y-2">
+      ${myOrders.map(t=>`<button onclick="showModalContent('order-detail',${JSON.stringify(t).replace(/"/g,'&quot;')})" class="w-full card-press bg-[#111] rounded-xl p-3 flex justify-between items-center">
+        <div><div class="text-[12px] font-bold">${t.gb||t.product||''} ${t.network||''}</div><div class="text-[10px] text-zinc-500">${t.id} • ${(t.date||'').slice(0,10)}</div></div>
+        <div class="text-right"><div class="text-[12px] font-bold">GH¢${t.price||''}</div><div class="text-[10px] ${sc[t.status]||'text-zinc-400'} font-bold">${t.status||'Pending'}</div></div>
+      </button>`).join('')||'<div class="text-[11px] text-zinc-500 text-center py-4">No orders yet</div>'}
+    </div>
+
+    <!-- Gift Code -->
+    <button onclick="claimGift()" class="w-full h-11 rounded-2xl bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/20 text-[12px] font-bold text-purple-300">🎁 Claim Gift Code</button>
+
+    <!-- Actions -->
+    <div class="space-y-2">
+      <button onclick="lookupOrder()" class="w-full h-10 rounded-full bg-white/5 text-zinc-300 font-bold text-[12px]">📦 Track Another Order</button>
+      <a href="https://wa.me/233${MOMO.slice(1)}" class="block h-10 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-[12px] text-center leading-[40px]">💬 WhatsApp Support</a>
+      <button onclick="logout()" class="w-full h-10 rounded-full bg-red-500/10 text-red-400 font-bold text-[12px]">Logout</button>
+    </div>
+  </div>`;
+  return html;
+}
+
+/* --- INSTALL APP --- */
+function installApp(){
+  if(deferredPrompt){deferredPrompt.prompt();deferredPrompt.userChoice.then(r=>{deferredPrompt=null});}
+}
+
+/* --- INIT --- */
+window.onload=function(){loadAll();render();
+  // Refresh every 3 min
+  setInterval(()=>{syncCloud().then(()=>render())},180000);
+};
+
+// Expose functions
+window.S=S;window.render=render;window.buyBundle=buyBundle;window.buyAirtime=buyAirtime;
+window.buyChecker=buyChecker;window.submitAFA=submitAFA;window.lookupOrder=lookupOrder;
+window.claimGift=claimGift;window.submitClaim=submitClaim;window.requestWithdrawApp=requestWithdrawApp;
+window.registerCustomer=registerCustomer;window.loginCustomer=loginCustomer;
+window.forgotPassword=forgotPassword;window.agentLoginApp=agentLoginApp;
+window.logout=logout;window.installApp=installApp;
+window.showModalContent=showModalContent;window.hideModal=hideModal;
+window.renderModal=renderModal;
+</script>
+</body>
+</html>
