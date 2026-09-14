@@ -1,310 +1,569 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Raaj Admin v2 - Full Agent Wallet</title>
+<title>RAAJ Admin V4 - Full Control Panel</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&display=swap" rel="stylesheet">
-<style>.font-syne{font-family:Syne}</style>
+<style>.font-syne{font-family:Syne}
+.toast-enter{animation:toastIn .3s ease}
+@keyframes toastIn{from{transform:translateY(30px);opacity:0}to{transform:translateY(0);opacity:1}}
+.overdue-flash{animation:overdueFlash 1s ease-in-out infinite}
+@keyframes overdueFlash{0%,100%{background:rgba(239,68,68,.08)}50%{background:rgba(239,68,68,.2)}}
+</style>
 </head>
 <body class="bg-[#0a0a0a] text-white min-h-screen">
 <div id="app"></div>
+<div id="toast-container" class="fixed top-4 right-4 z-[200] space-y-2"></div>
+
 <script>
+/* =========================================================
+   RAAJ ADMIN V4 - COMPREHENSIVE CONTROL PANEL
+   All original V3 features preserved + all 23 new requirements
+   ========================================================= */
+
+const MOMO_NUMBER='0241113791';const MOMO_NAME='Mohammed A. Suraj';
+const VODA_NUMBER='0208094005';const VODA_NAME='Mohammed A. Suraj';
+const CEO_NAME='M. S. Abubakar';
+
+/* --- DEFAULTS (preserved from original) --- */
 const DEFAULT_BUNDLES={
  MTN:[{gb:1,price:5},{gb:2,price:9},{gb:3,price:13},{gb:5,price:21},{gb:8,price:32},{gb:10,price:39},{gb:15,price:57},{gb:20,price:74},{gb:30,price:108},{gb:50,price:175},{gb:100,price:320}],
  Telecel:[{gb:1,price:6},{gb:2,price:10},{gb:3,price:15},{gb:5,price:23},{gb:10,price:42},{gb:15,price:60},{gb:20,price:78},{gb:30,price:112},{gb:50,price:180},{gb:100,price:330}],
  AirtelTigo:[{gb:1,price:5},{gb:2,price:9},{gb:5,price:22},{gb:8,price:33},{gb:10,price:40},{gb:15,price:58},{gb:20,price:76},{gb:30,price:110},{gb:50,price:178},{gb:100,price:325}]
 };
 const DEFAULT_STORE={
- bundles:{mode:'redirect', primary:'https://cheapdata.shop/shop/raaj-data-services-1772546369430', secondary:'https://agent.budgetdata.store/raajdataservices', my_paystack_link:'https://paystack.com/pay/raaj-bundles', auto_forward:true, forward_primary:'https://cheapdata.shop/shop/raaj-data-services-1772546369430'},
+ bundles:{mode:'redirect',primary:'https://cheapdata.shop/shop/raaj-data-services-1772546369430',secondary:'https://agent.budgetdata.store/raajdataservices',my_paystack_link:'https://paystack.com/pay/raaj-bundles',auto_forward:true,forward_primary:'https://cheapdata.shop/shop/raaj-data-services-1772546369430',redirect_toggle:true,airtime_redirect_toggle:true},
  delivery_note:'',
- afa:{mode:'manual', momo_number:'0241113791', momo_name:'Mohammed Suraj', amount:35, my_paystack_link:'https://paystack.com/pay/raaj-afa'},
- sms:{enabled:false, api_key:'', sender:'RaajData', provider:'hubtel'}
+ afa:{mode:'manual',momo_number:'0241113791',momo_name:'Mohammed A. Suraj',amount:35,my_paystack_link:'https://paystack.com/pay/raaj-afa',toggle:true},
+ sms:{enabled:false,api_key:'',sender:'RaajData',provider:'hubtel'},
+ msg_confirmed:'Raaj Data: Your {gb}GB {network} order confirmed! ID {id}. Delivering shortly.',
+ msg_delivered:'Raaj Data: Your {gb}GB {network} order DELIVERED! ID {id}. Thank you!',
+ msg_failed:'Raaj Data: Your order {id} has FAILED. Contact support 0241113791.'
 };
-let session=false, tab='Dashboard', agents=[], txs=[], afas=[], withdraws=[], storeCfg=JSON.parse(JSON.stringify(DEFAULT_STORE)), bundlePrices=JSON.parse(JSON.stringify(DEFAULT_BUNDLES)), checkerPrices={WASSCE:25,BECE:15,CSSPS:10}, supaCfg={url:'https://hvqhxfnhnqgxlasgllwf.supabase.co', anonKey:''} // Add your anon key in Checkers & Settings -> Supabase;
+const DEFAULT_AIRTIME={MTN:{min:1,max:500,on:true},Telecel:{min:1,max:500,on:true},AirtelTigo:{min:1,max:500,on:true}};
 
+/* --- STATE --- */
+let session=false, tab='Dashboard';
+let agents=[], txs=[], afas=[], withdraws=[], storeCfg=JSON.parse(JSON.stringify(DEFAULT_STORE));
+let bundlePrices=JSON.parse(JSON.stringify(DEFAULT_BUNDLES));
+let checkerPrices={WASSCE:25,BECE:15,CSSPS:10}, checkerStock={WASSCE:0,BECE:0,CSSPS:0};
+let supaCfg={url:'https://hvqhxfnhnqgxlasgllwf.supabase.co',anonKey:''};
+let adminCreds={u:'admin',p:'raaj2024'};
+let airtimeCfg=JSON.parse(JSON.stringify(DEFAULT_AIRTIME));
+let customers=[], claimRequests=[], giftCodes=[], announcements=[], adverts=[], serviceProviders=[];
+let deliveryTimer={enabled:false,minutes:10,label:'Delivering in'};
+let overdueInterval=null;
+
+/* --- TOAST --- */
+function showToast(msg,type='info'){
+  const c=document.getElementById('toast-container');
+  const colors={info:'bg-blue-500',success:'bg-emerald-500',error:'bg-red-500',warning:'bg-yellow-500 text-black'};
+  const d=document.createElement('div');
+  d.className=`toast-enter px-4 py-3 rounded-xl ${colors[type]||colors.info} text-white font-bold text-[12px] shadow-lg max-w-[320px]`;
+  d.textContent=msg;c.appendChild(d);
+  setTimeout(()=>{d.style.opacity='0';d.style.transition='opacity .3s';setTimeout(()=>d.remove(),300)},3500);
+}
+
+/* --- SUPABASE CLOUD SYNC (preserved from original) --- */
 async function syncFromSupabaseCloud(){
   try{
-    if(!supaCfg.url || !supaCfg.anonKey) return;
-    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
-    const supabase = createClient(supaCfg.url, supaCfg.anonKey);
-    const { data, error } = await supabase.from('products').select('*').eq('available', true).order('price');
-    if(error) return;
-    if(!data || data.length==0) return;
-    // Rebuild bundlePrices from cloud
-    let newPrices={MTN:[], Telecel:[], AirtelTigo:[]};
+    if(!supaCfg.url||!supaCfg.anonKey)return;
+    const{createClient}=await import('https://esm.sh/@supabase/supabase-js@2');
+    const supabase=createClient(supaCfg.url,supaCfg.anonKey);
+    const{data,error}=await supabase.from('products').select('*').eq('available',true).order('price');
+    if(error||!data||data.length===0)return;
+    let newPrices={MTN:[],Telecel:[],AirtelTigo:[]};
     for(let p of data){
-      if(p.network==='Services') continue;
-      let gb=parseInt((p.size||p.bundle||'').replace('GB',''));
-      if(isNaN(gb)) continue;
-      if(!newPrices[p.network]) newPrices[p.network]=[];
-      // avoid dup
-      if(!newPrices[p.network].find(x=>x.gb===gb)){
-        newPrices[p.network].push({gb, price: p.price});
-      }
+      if(p.network==='Services')continue;
+      let gb=parseInt((p.size||p.bundle||'').replace('GB',''));if(isNaN(gb))continue;
+      if(!newPrices[p.network])newPrices[p.network]=[];
+      if(!newPrices[p.network].find(x=>x.gb===gb))newPrices[p.network].push({gb,price:p.price});
     }
-    for(let k of Object.keys(newPrices)){ newPrices[k].sort((a,b)=>a.gb-b.gb); }
-    if(newPrices.MTN.length>0 || newPrices.Telecel.length>0){
-      bundlePrices=newPrices;
-      localStorage.setItem('raaj_bundle_prices', JSON.stringify(bundlePrices));
-      console.log('Synced '+data.length+' bundles from Supabase cloud to admin');
-    }
-  }catch(e){ console.log('Cloud sync skipped', e.message); }
+    for(let k of Object.keys(newPrices)){newPrices[k].sort((a,b)=>a.gb-b.gb)}
+    if(newPrices.MTN.length>0||newPrices.Telecel.length>0){bundlePrices=newPrices;localStorage.setItem('raaj_bundle_prices',JSON.stringify(bundlePrices))}
+  }catch(e){console.log('Cloud sync skipped',e.message)}
 }
 
+/* --- LOAD (preserved + new keys) --- */
 function load(){
- try{ session=JSON.parse(localStorage.getItem('raaj_admin_session')||'null')?.logged||false; }catch{}
- try{ agents=JSON.parse(localStorage.getItem('raaj_agents')||'[]'); }catch{agents=[]}
- try{ txs=JSON.parse(localStorage.getItem('raaj_transactions')||'[]'); }catch{txs=[]}
- try{ afas=JSON.parse(localStorage.getItem('raaj_afa_requests')||'[]'); }catch{afas=[]}
- try{ withdraws=JSON.parse(localStorage.getItem('raaj_withdraws')||'[]'); }catch{withdraws=[]}
- try{ const c=JSON.parse(localStorage.getItem('raaj_store_config')||'null'); if(c){ storeCfg={...DEFAULT_STORE, ...c, bundles:{...DEFAULT_STORE.bundles, ...(c.bundles||{})}, afa:{...DEFAULT_STORE.afa, ...(c.afa||{})}, sms:{...DEFAULT_STORE.sms, ...(c.sms||{})} }; storeCfg.delivery_note=c.delivery_note||''; } }catch{}
- try{ const bp=JSON.parse(localStorage.getItem('raaj_bundle_prices')||'null'); if(bp) bundlePrices=bp; }catch{}
- try{ const cp=JSON.parse(localStorage.getItem('raaj_checker_prices')||'null'); if(cp) checkerPrices=cp; }catch{}
- try{ const sc=JSON.parse(localStorage.getItem('raaj_supabase_config')||'null'); if(sc) supaCfg=sc; }catch{}
- render();
- // Try cloud sync in background after render
- setTimeout(()=>{ syncFromSupabaseCloud().then(()=>render()); }, 800);
+  try{const sc=JSON.parse(localStorage.getItem('raaj_admin_creds')||'null');if(sc&&sc.u&&sc.p)adminCreds=sc}catch{}
+  try{session=JSON.parse(localStorage.getItem('raaj_admin_session')||'null')?.logged||false}catch{}
+  try{agents=JSON.parse(localStorage.getItem('raaj_agents')||'[]')}catch{agents=[]}
+  try{txs=JSON.parse(localStorage.getItem('raaj_transactions')||'[]')}catch{txs=[]}
+  try{afas=JSON.parse(localStorage.getItem('raaj_afa_requests')||'[]')}catch{afas=[]}
+  try{withdraws=JSON.parse(localStorage.getItem('raaj_withdraws')||'[]')}catch{withdraws=[]}
+  try{const c=JSON.parse(localStorage.getItem('raaj_store_config')||'null');if(c){storeCfg={...DEFAULT_STORE,...c,bundles:{...DEFAULT_STORE.bundles,...(c.bundles||{})},afa:{...DEFAULT_STORE.afa,...(c.afa||{})},sms:{...DEFAULT_STORE.sms,...(c.sms||{})}};storeCfg.delivery_note=c.delivery_note||'';if(!storeCfg.msg_confirmed)storeCfg.msg_confirmed=DEFAULT_STORE.msg_confirmed;if(!storeCfg.msg_delivered)storeCfg.msg_delivered=DEFAULT_STORE.msg_delivered;if(!storeCfg.msg_failed)storeCfg.msg_failed=DEFAULT_STORE.msg_failed;if(storeCfg.bundles.redirect_toggle===undefined)storeCfg.bundles.redirect_toggle=true;if(storeCfg.bundles.airtime_redirect_toggle===undefined)storeCfg.bundles.airtime_redirect_toggle=true;if(storeCfg.afa.toggle===undefined)storeCfg.afa.toggle=true}}catch{}
+  try{const bp=JSON.parse(localStorage.getItem('raaj_bundle_prices')||'null');if(bp)bundlePrices=bp}catch{}
+  try{const cp=JSON.parse(localStorage.getItem('raaj_checker_prices')||'null');if(cp)checkerPrices=cp}catch{}
+  try{const cs=JSON.parse(localStorage.getItem('raaj_checker_stock')||'null');if(cs)checkerStock=cs}catch{}
+  try{const sc=JSON.parse(localStorage.getItem('raaj_supabase_config')||'null');if(sc)supaCfg=sc}catch{}
+  try{customers=JSON.parse(localStorage.getItem('raaj_customers')||'[]')}catch{customers=[]}
+  try{claimRequests=JSON.parse(localStorage.getItem('raaj_claim_requests')||'[]')}catch{claimRequests=[]}
+  try{giftCodes=JSON.parse(localStorage.getItem('raaj_gift_codes')||'[]')}catch{giftCodes=[]}
+  try{announcements=JSON.parse(localStorage.getItem('raaj_announcements')||'[]')}catch{announcements=[]}
+  try{adverts=JSON.parse(localStorage.getItem('raaj_adverts')||'[]')}catch{adverts=[]}
+  try{serviceProviders=JSON.parse(localStorage.getItem('raaj_service_providers')||'[]')}catch{serviceProviders=[]}
+  try{const dt=JSON.parse(localStorage.getItem('raaj_delivery_timer')||'null');if(dt)deliveryTimer=dt}catch{}
+  try{const ac=JSON.parse(localStorage.getItem('raaj_airtime_config')||'null');if(ac)airtimeCfg=ac}catch{}
+  render();
+  startOverdueCheck();
+  setTimeout(()=>syncFromSupabaseCloud().then(()=>render()),800);
 }
-function saveStore(){ localStorage.setItem('raaj_store_config', JSON.stringify(storeCfg)); render(); alert('Saved! LIVE: '+storeCfg.bundles.mode); }
+
+/* --- OVERDUE CHECK --- */
+function startOverdueCheck(){
+  if(overdueInterval)clearInterval(overdueInterval);
+  overdueInterval=setInterval(()=>{
+    const now=Date.now();const tm=deliveryTimer.minutes||10;
+    const overdue=txs.filter(t=>(t.status==='Processing'||t.status==='Pending')&&((new Date(t.date).getTime()+tm*60000)<now));
+    if(overdue.length>0)showToast('⚠️ '+overdue.length+' overdue order(s)! Check Orders tab.','warning');
+  },120000);
+}
+
+/* --- SAVE FUNCTIONS --- */
+function saveStore(){localStorage.setItem('raaj_store_config',JSON.stringify(storeCfg));showToast('Saved! LIVE: '+storeCfg.bundles.mode,'success');render()}
 async function saveBundles(){
-  localStorage.setItem('raaj_bundle_prices', JSON.stringify(bundlePrices));
-  // ALSO SYNC TO SUPABASE CLOUD - keep all original + sync
+  localStorage.setItem('raaj_bundle_prices',JSON.stringify(bundlePrices));
   try{
-    if(!supaCfg.url || !supaCfg.anonKey){ alert('Bundle Prices Saved Locally! (Add Supabase anonKey in Checkers & Settings to also sync to cloud)'); render(); return; }
-    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
-    const supabase = createClient(supaCfg.url, supaCfg.anonKey);
-    // Convert bundlePrices object to rows for products table
+    if(!supaCfg.url||!supaCfg.anonKey){showToast('Bundle Prices Saved Locally!','success');render();return}
+    const{createClient}=await import('https://esm.sh/@supabase/supabase-js@2');
+    const supabase=createClient(supaCfg.url,supaCfg.anonKey);
     let rows=[];
-    for(let net of Object.keys(bundlePrices)){
-      for(let b of bundlePrices[net]){
-        rows.push({
-          network: net,
-          size: b.gb + 'GB',
-          bundle: b.gb + 'GB',
-          price: b.price,
-          agent_price: (b.price*0.9).toFixed(2), // 10% less as agent price default
-          available: true,
-          description: net + ' ' + b.gb + 'GB'
-        });
-      }
-    }
-    // Add checkers as Services if exists
-    if(checkerPrices){
-      rows.push({network:'Services', size:'WASSCE Checker', bundle:'WASSCE Checker', price: checkerPrices.WASSCE||25, agent_price: (checkerPrices.WASSCE||25)-3, available:true, description:'WASSCE Result Checker'});
-      rows.push({network:'Services', size:'BECE Checker', bundle:'BECE Checker', price: checkerPrices.BECE||15, agent_price: (checkerPrices.BECE||15)-2, available:true, description:'BECE Result Checker'});
-    }
-    // Clear and insert? Upsert by network+size
-    // For simplicity, delete existing and insert new 43
-    // First fetch existing to preserve IDs? We'll upsert
-    const { data: existing } = await supabase.from('products').select('id, network, size');
-    // Delete all then insert
-    await supabase.from('products').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    const { error } = await supabase.from('products').insert(rows);
-    if(error) throw error;
-    alert('Bundle Prices Saved & SYNCED to Supabase Cloud! '+rows.length+' bundles live now!');
-  }catch(e){
-    console.error(e);
-    alert('Saved locally, but Supabase sync failed: '+e.message+'\nCheck anonKey in Checkers & Settings');
-  }
+    for(let net of Object.keys(bundlePrices)){for(let b of bundlePrices[net])rows.push({network:net,size:b.gb+'GB',bundle:b.gb+'GB',price:b.price,agent_price:(b.price*0.9).toFixed(2),available:true,description:net+' '+b.gb+'GB'})}
+    if(checkerPrices){rows.push({network:'Services',size:'WASSCE Checker',bundle:'WASSCE Checker',price:checkerPrices.WASSCE||25,agent_price:(checkerPrices.WASSCE||25)-3,available:true,description:'WASSCE Result Checker'});rows.push({network:'Services',size:'BECE Checker',bundle:'BECE Checker',price:checkerPrices.BECE||15,agent_price:(checkerPrices.BECE||15)-2,available:true,description:'BECE Result Checker'});rows.push({network:'Services',size:'CSSPS Checker',bundle:'CSSPS Checker',price:checkerPrices.CSSPS||10,agent_price:(checkerPrices.CSSPS||10)-2,available:true,description:'CSSPS Result Checker'})}
+    await supabase.from('products').delete().neq('id','00000000-0000-0000-0000-000000000000');
+    const{error}=await supabase.from('products').insert(rows);
+    if(error)throw error;
+    showToast('Saved & SYNCED to Cloud! '+rows.length+' bundles live','success');
+  }catch(e){showToast('Saved locally, cloud sync failed: '+e.message,'warning')}
   render();
 }
-function saveCheckers(){ localStorage.setItem('raaj_checker_prices', JSON.stringify(checkerPrices)); localStorage.setItem('raaj_store_config', JSON.stringify(storeCfg)); alert('Checkers + Delivery Note + SMS Saved!'); render(); }
+function saveCheckers(){localStorage.setItem('raaj_checker_prices',JSON.stringify(checkerPrices));localStorage.setItem('raaj_checker_stock',JSON.stringify(checkerStock));localStorage.setItem('raaj_store_config',JSON.stringify(storeCfg));showToast('Checkers + Stock + Delivery + SMS Saved!','success');render()}
+function saveAirtime(){localStorage.setItem('raaj_airtime_config',JSON.stringify(airtimeCfg));showToast('Airtime config saved!','success');render()}
+function saveDeliveryTimer(){localStorage.setItem('raaj_delivery_timer',JSON.stringify(deliveryTimer));showToast('Delivery timer saved!','success');render()}
+function saveMessages(){localStorage.setItem('raaj_store_config',JSON.stringify(storeCfg));showToast('Message templates saved!','success');render()}
+function saveGiftCodes(){localStorage.setItem('raaj_gift_codes',JSON.stringify(giftCodes));showToast('Gift codes saved!','success');render()}
+function saveAnnouncements(){localStorage.setItem('raaj_announcements',JSON.stringify(announcements));showToast('Announcements saved!','success');render()}
+function saveAdverts(){localStorage.setItem('raaj_adverts',JSON.stringify(adverts));showToast('Adverts saved!','success');render()}
+function saveServiceProviders(){localStorage.setItem('raaj_service_providers',JSON.stringify(serviceProviders));showToast('Service providers saved!','success');render()}
 
-// WALLET FUNCTIONS
-window.loadWallet=(code)=>{
- const amt=parseFloat(prompt('Enter amount to LOAD to '+code+' wallet (positive = add, negative = deduct):')); if(isNaN(amt)) return;
- const idx=agents.findIndex(a=>a.code===code); if(idx==-1) return;
- agents[idx].wallet=(agents[idx].wallet||0)+amt;
- if(!agents[idx].history) agents[idx].history=[];
- agents[idx].history.push({type: amt>=0?'LOAD':'DEDUCT', amount:amt, date:new Date().toISOString(), by:'admin'});
- localStorage.setItem('raaj_agents', JSON.stringify(agents));
- sendSMS(agents[idx].phone, `Raaj: Your wallet ${amt>=0?'credited':'debited'} GH¢${Math.abs(amt)}. New balance GH¢${agents[idx].wallet}.`);
- render(); alert('Wallet updated: '+code+' new balance GH¢'+agents[idx].wallet);
-};
-window.payCommission=(code)=>{
- const ag=agents.find(a=>a.code===code); if(!ag) return;
- if((ag.wallet||0)<=0){ alert('Wallet empty'); return; }
- const amount=ag.wallet;
- if(!confirm(`Pay GH¢${amount} commission to ${code} - ${ag.name}?\nAfter pay, wallet resets to 0 and marked as PAID via MoMo ${ag.phone}?`)) return;
- const wd={id:'WD-'+Date.now().toString(36).toUpperCase(), agentCode:code, name:ag.name, phone:ag.phone, amount, status:'Paid', date:new Date().toISOString(), type:'Commission Payout'};
- withdraws.push(wd);
- ag.wallet=0;
- if(!ag.history) ag.history=[];
- ag.history.push({type:'PAYOUT', amount, date:new Date().toISOString(), by:'admin'});
- localStorage.setItem('raaj_agents', JSON.stringify(agents));
- localStorage.setItem('raaj_withdraws', JSON.stringify(withdraws));
- sendSMS(ag.phone, `Raaj: GH¢${amount} commission PAID to your MoMo ${ag.phone}. Thanks for selling with Raaj Multimedia.`);
- render(); alert('PAID GH¢'+amount+' to '+code);
-};
-window.resetPassword=(code)=>{
- const newPass=prompt('Enter new password for '+code+' (min 6 chars):'); if(!newPass || newPass.length<6) return;
- const idx=agents.findIndex(a=>a.code===code); if(idx==-1) return;
- agents[idx].password=newPass;
- agents[idx].password_reset=true;
- localStorage.setItem('raaj_agents', JSON.stringify(agents));
- sendSMS(agents[idx].phone, `Raaj: Your agent password reset. Code ${code} New password: ${newPass}. Login at raaj-multimedia.github.io`);
- alert('Password reset for '+code+' to: '+newPass);
- render();
-};
-window.blockAgent=(code)=>{
- const idx=agents.findIndex(a=>a.code===code); if(idx==-1) return;
- agents[idx].status=agents[idx].status==='blocked'?'active':'blocked';
- localStorage.setItem('raaj_agents', JSON.stringify(agents));
- render();
-};
-window.deleteAgent=(code)=>{
- if(!confirm('Delete agent '+code+'? This removes all team links!')) return;
- agents=agents.filter(a=>a.code!==code);
- localStorage.setItem('raaj_agents', JSON.stringify(agents));
- render();
-};
-window.approveWithdraw=(id)=>{
- const idx=withdraws.findIndex(w=>w.id===id); if(idx==-1) return;
- withdraws[idx].status='Paid';
- localStorage.setItem('raaj_withdraws', JSON.stringify(withdraws));
- const ag=agents.find(a=>a.code===withdraws[idx].agentCode);
- if(ag){ sendSMS(ag.phone, `Raaj: Your withdrawal GH¢${withdraws[idx].amount} APPROVED and PAID.`); }
- render();
-};
-window.addAgentManual=()=>{
- const code=prompt('Agent Code e.g. RAAJ10').toUpperCase(); if(!code) return;
- const name=prompt('Full Name'); if(!name) return;
- const phone=prompt('Phone 024XXXXXXX'); if(!phone) return;
- const parent=prompt('Parent Code (leave empty if direct, or enter referrer e.g. RAAJ01)'); 
- const pass=prompt('Set password (default 123456)','123456')||'123456';
- if(agents.find(a=>a.code===code)){ alert('Code exists'); return; }
- agents.push({code, name, phone, wallet:0, earnings:0, team_size:0, parent: parent||null, password:pass, status:'active', created:new Date().toISOString().slice(0,10), history:[]});
- localStorage.setItem('raaj_agents', JSON.stringify(agents));
- render(); alert('Agent '+code+' created');
-};
-window.addBundle=(net)=>{ const gb=parseInt(prompt('Enter GB e.g. 4')); if(!gb) return; const price=parseFloat(prompt('Enter Price GH¢ for '+gb+'GB')); if(isNaN(price)) return; bundlePrices[net].push({gb,price}); bundlePrices[net].sort((a,b)=>a.gb-b.gb); saveBundles(); render(); };
-window.removeBundle=(net,idx)=>{ if(!confirm('Remove '+bundlePrices[net][idx].gb+'GB?')) return; bundlePrices[net].splice(idx,1); saveBundles(); render(); };
-
-async function sendSMS(phone, msg){
+/* --- SMS (preserved from original) --- */
+async function sendSMS(phone,msg){
   try{
     const url=(supaCfg.url||'https://hvqhxfnhnqgxlasgllwf.supabase.co')+'/functions/v1/send-sms';
     const anon=supaCfg.anonKey||'';
-    if(!storeCfg.sms.enabled){ console.log('[SMS Disabled] To:',phone,msg); return; }
-    if(!anon){ console.log('[SMS Mock - No Supabase Key] To:',phone,msg); alert('SMS Mock (no Supabase anon key set): To '+phone+'\n'+msg); return; }
-    const res=await fetch(url, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+anon, 'apikey': anon },
-      body: JSON.stringify({phone, message: msg, type: 'admin'})
-    });
-    const j=await res.json();
-    console.log('SMS sent',j);
-  }catch(e){ console.log('SMS error',e); }
-}
-function sendSMS_OLD(phone, msg){
-
- if(!storeCfg.sms.enabled || !storeCfg.sms.api_key){ console.log('SMS disabled - would send to',phone,msg); return; }
- // Secure - calls Edge Function send-sms - key hidden in Supabase env - real fetch would go here
- // fetch(`https://sms.hubtel.com/v1/messages/send?clientsecret=${storeCfg.sms.api_key}&...`)
- console.log('SMS to',phone,msg);
- // In production: call your Supabase Edge Function that sends SMS to avoid exposing key
+    if(!storeCfg.sms.enabled){console.log('[SMS Disabled] To:',phone,msg);return}
+    if(!anon){console.log('[SMS Mock] To:',phone,msg);showToast('SMS Mock: To '+phone,'warning');return}
+    await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+anon,'apikey':anon},body:JSON.stringify({phone,message:msg,type:'admin'})});
+  }catch(e){console.log('SMS error',e)}
 }
 
+/* --- ORDER STATUS (NEW - Requirement 1,5,6) --- */
+function changeOrderStatus(id,newStatus){
+  let idx=txs.findIndex(t=>t.id===id);
+  if(idx!==-1){
+    const old=txs[idx].status;txs[idx].status=newStatus;txs[idx].statusChangedAt=new Date().toISOString();
+    localStorage.setItem('raaj_transactions',JSON.stringify(txs));
+    const tx=txs[idx];
+    if(newStatus==='Delivered'){sendSMS(tx.phone,storeCfg.msg_delivered.replace('{gb}',tx.gb||'').replace('{network}',tx.network||'').replace('{id}',tx.id))}
+    else if(newStatus==='Failed'){sendSMS(tx.phone,storeCfg.msg_failed.replace('{id}',tx.id))}
+    else if(newStatus==='Processing'){sendSMS(tx.phone,storeCfg.msg_confirmed.replace('{gb}',tx.gb||'').replace('{network}',tx.network||'').replace('{id}',tx.id))}
+    // Checker code reveal on delivered
+    if(newStatus==='Delivered'&&tx.product==='checker'&&checkerStock._codes&&checkerStock._codes[tx.gb]){
+      const codes=checkerStock._codes[tx.gb];if(codes.length>0){const code=codes.shift();tx.checkerCode=code;tx.status='Delivered';checkerStock[tx.gb]=(checkerStock[tx.gb]||1)-1;localStorage.setItem('raaj_checker_stock',JSON.stringify(checkerStock));localStorage.setItem('raaj_transactions',JSON.stringify(txs));sendSMS(tx.phone,`Raaj Data: Your ${tx.gb} PIN is: ${code}. Keep it safe!`);showToast('Checker PIN '+code+' sent to '+tx.phone,'success')}
+    }
+    showToast('Order '+id+' → '+newStatus,'success');render();return;
+  }
+  idx=afas.findIndex(a=>a.id===id);
+  if(idx!==-1){afas[idx].status=newStatus;localStorage.setItem('raaj_afa_requests',JSON.stringify(afas));showToast('AFA '+id+' → '+newStatus,'success');render();return}
+}
+function changeMultipleOrderStatus(){
+  const checkboxes=document.querySelectorAll('.order-check:checked');
+  if(checkboxes.length===0){alert('Select orders first');return}
+  const status=prompt('Enter new status for '+checkboxes.length+' orders (Pending/Processing/Delivered/Failed/Cancelled):');
+  if(!status)return;
+  checkboxes.forEach(cb=>{changeOrderStatus(cb.value,status)});
+}
+
+/* --- WALLET FUNCTIONS (preserved from original + 3-tier) --- */
+window.loadWallet=(code)=>{
+  const amt=parseFloat(prompt('Enter amount to LOAD to '+code+' wallet (positive=add, negative=deduct):'));if(isNaN(amt))return;
+  const idx=agents.findIndex(a=>a.code===code);if(idx===-1)return;
+  agents[idx].wallet=(agents[idx].wallet||0)+amt;
+  if(!agents[idx].history)agents[idx].history=[];
+  agents[idx].history.push({type:amt>=0?'LOAD':'DEDUCT',amount:amt,date:new Date().toISOString(),by:'admin'});
+  localStorage.setItem('raaj_agents',JSON.stringify(agents));
+  sendSMS(agents[idx].phone,`Raaj: Your wallet ${amt>=0?'credited':'debited'} GH¢${Math.abs(amt)}. New balance GH¢${agents[idx].wallet}.`);
+  showToast('Wallet updated: '+code+' → GH¢'+agents[idx].wallet,'success');render();
+};
+window.payCommission=(code)=>{
+  const ag=agents.find(a=>a.code===code);if(!ag)return;
+  if((ag.wallet||0)<=0){alert('Wallet empty');return}
+  const amount=ag.wallet;
+  if(!confirm(`Pay GH¢${amount} commission to ${code} - ${ag.name}?`))return;
+  const wd={id:'WD-'+Date.now().toString(36).toUpperCase(),agentCode:code,name:ag.name,phone:ag.phone,amount,status:'Paid',date:new Date().toISOString(),type:'Commission Payout'};
+  withdraws.push(wd);ag.wallet=0;
+  if(!ag.history)ag.history=[];ag.history.push({type:'PAYOUT',amount,date:new Date().toISOString(),by:'admin'});
+  localStorage.setItem('raaj_agents',JSON.stringify(agents));localStorage.setItem('raaj_withdraws',JSON.stringify(withdraws));
+  sendSMS(ag.phone,`Raaj: GH¢${amount} commission PAID to your MoMo ${ag.phone}.`);
+  showToast('PAID GH¢'+amount+' to '+code,'success');render();
+};
+window.resetAgentPassword=(code)=>{
+  const newPass=prompt('Enter new password for '+code+' (min 6 chars):');if(!newPass||newPass.length<6)return;
+  const idx=agents.findIndex(a=>a.code===code);if(idx===-1)return;
+  agents[idx].password=newPass;agents[idx].password_reset=true;
+  localStorage.setItem('raaj_agents',JSON.stringify(agents));
+  sendSMS(agents[idx].phone,`Raaj: Agent password reset. Code ${code} New password: ${newPass}`);
+  showToast('Password reset for '+code,'success');render();
+};
+window.resetCustomerPassword=(phone)=>{
+  const newPass=Math.random().toString(36).slice(-8).toUpperCase();
+  const idx=customers.findIndex(c=>c.phone===phone);if(idx===-1)return;
+  customers[idx].password=newPass;localStorage.setItem('raaj_customers',JSON.stringify(customers));
+  sendSMS(phone,`Raaj Data: Your new password is ${newPass}. Login at Raaj Data Services.`);
+  showToast('New password sent to '+phone,'success');render();
+};
+window.blockAgent=(code)=>{const idx=agents.findIndex(a=>a.code===code);if(idx===-1)return;agents[idx].status=agents[idx].status==='blocked'?'active':'blocked';localStorage.setItem('raaj_agents',JSON.stringify(agents));showToast(code+' '+(agents[idx].status==='blocked'?'blocked':'unblocked'),'success');render()};
+window.deleteAgent=(code)=>{if(!confirm('Delete agent '+code+'?'))return;agents=agents.filter(a=>a.code!==code);localStorage.setItem('raaj_agents',JSON.stringify(agents));render()};
+window.approveWithdraw=(id)=>{
+  const idx=withdraws.findIndex(w=>w.id===id);if(idx===-1)return;
+  withdraws[idx].status='Paid';localStorage.setItem('raaj_withdraws',JSON.stringify(withdraws));
+  const ag=agents.find(a=>a.code===withdraws[idx].agentCode);if(ag){sendSMS(ag.phone,`Raaj: Your withdrawal GH¢${withdraws[idx].amount} APPROVED and PAID.`)}
+  showToast('Withdrawal approved','success');render();
+};
+
+/* --- SEND & CLAIM (NEW - Requirement 7) --- */
+window.approveClaim=(id)=>{
+  const idx=claimRequests.findIndex(c=>c.id===id);if(idx===-1)return;
+  claimRequests[idx].status='Approved';localStorage.setItem('raaj_claim_requests',JSON.stringify(claimRequests));
+  const ag=agents.find(a=>a.code===claimRequests[idx].agentCode);
+  if(ag){ag.wallet=(ag.wallet||0)+claimRequests[idx].amount;if(!ag.history)ag.history=[];ag.history.push({type:'CLAIM_TOPUP',amount:claimRequests[idx].amount,date:new Date().toISOString(),by:'admin',claimId:id});localStorage.setItem('raaj_agents',JSON.stringify(agents));sendSMS(ag.phone,`Raaj: Your Send & Claim GH¢${claimRequests[idx].amount} APPROVED! Wallet credited.`)}
+  showToast('Claim approved - wallet credited','success');render();
+};
+window.disapproveClaim=(id)=>{
+  const idx=claimRequests.findIndex(c=>c.id===id);if(idx===-1)return;
+  claimRequests[idx].status='Disapproved';localStorage.setItem('raaj_claim_requests',JSON.stringify(claimRequests));
+  const ag=agents.find(a=>a.code===claimRequests[idx].agentCode);if(ag){sendSMS(ag.phone,`Raaj: Your claim GH¢${claimRequests[idx].amount} was disapproved. Contact admin.`)}
+  showToast('Claim disapproved','warning');render();
+};
+
+/* --- ADD FUNCTIONS --- */
+window.addAgentManual=()=>{
+  const code=prompt('Agent Code e.g. RAAJ10').toUpperCase();if(!code)return;
+  const name=prompt('Full Name');if(!name)return;
+  const phone=prompt('Phone 024XXXXXXX');if(!phone)return;
+  const parent=prompt('Parent Code (leave empty if direct, or enter referrer e.g. RAAJ01)');
+  const pass=prompt('Set password (default 123456)','123456')||'123456';
+  const tier=parseInt(prompt('Tier (1/2/3):','1'))||1;
+  const comm=parseFloat(prompt('Commission % (default 10):','10'))||10;
+  if(agents.find(a=>a.code===code)){alert('Code exists');return}
+  agents.push({code,name,phone,wallet:0,earnings:0,team_size:0,parent:parent||null,password:pass,status:'active',created:new Date().toISOString().slice(0,10),history:[],tier,commission:comm});
+  localStorage.setItem('raaj_agents',JSON.stringify(agents));
+  sendSMS(phone,`Raaj: Welcome ${name}! Agent Code ${code} created. Tier ${tier}, Commission ${comm}%.`);
+  showToast('Agent '+code+' created (Tier '+tier+', '+comm+'%)','success');render();
+};
+window.addBundle=(net)=>{const gb=parseInt(prompt('Enter GB e.g. 4'));if(!gb)return;const price=parseFloat(prompt('Enter Price GH¢ for '+gb+'GB'));if(isNaN(price))return;bundlePrices[net].push({gb,price});bundlePrices[net].sort((a,b)=>a.gb-b.gb);saveBundles()};
+window.removeBundle=(net,idx)=>{if(!confirm('Remove '+bundlePrices[net][idx].gb+'GB?'))return;bundlePrices[net].splice(idx,1);saveBundles()};
+
+function addAnnouncement(target){const msg=prompt('Enter announcement for '+(target==='customers'?'Customers (shop banner)':'Agents (agent dashboard)')+':');if(!msg)return;announcements.push({id:Date.now(),target,message:msg,active:true,created:new Date().toISOString()});saveAnnouncements()}
+function addAdvert(){const title=prompt('Advert title:');if(!title)return;const body=prompt('Body text:');const cta=prompt('Button text (optional):');const link=prompt('Button link (optional):');adverts.push({id:Date.now(),title,body:body||'',cta:cta||'',cta_link:link||'',active:true});saveAdverts()}
+function addGiftCode(){const code=prompt('Gift code (or leave blank for auto-generate):')||'GIFT-'+Math.random().toString(36).slice(-6).toUpperCase();const value=prompt('Value (e.g. 1GB, GH¢5):')||'1GB';const type=prompt('Type (Free Data, Discount, etc):')||'Free Data';const criteria=prompt('Criteria (all / referral / first_purchase):','all');const desc=prompt('Description:')||'Use this code for '+value;giftCodes.push({id:Date.now(),code,value,type,criteria:criteria||'all',description:desc,claimed:false,claimedBy:null,created:new Date().toISOString()});saveGiftCodes()}
+function addServiceProvider(){const name=prompt('Provider name (Hubtel, AllNet, Arkesel):');if(!name)return;const url=prompt('API URL:');const key=prompt('API Key:');serviceProviders.push({id:Date.now(),name,api_url:url||'',api_key:key||'',active:true,for_airtime:true});saveServiceProviders()}
+function addCheckerCodes(name){const codes=document.getElementById('codes_'+name).value.trim();if(!codes)return;const codeList=codes.split(',').map(c=>c.trim()).filter(c=>c);if(!checkerStock._codes)checkerStock._codes={};if(!checkerStock._codes[name])checkerStock._codes[name]=[];checkerStock._codes[name].push(...codeList);checkerStock[name]=(checkerStock[name]||0)+codeList.length;localStorage.setItem('raaj_checker_stock',JSON.stringify(checkerStock));showToast('Added '+codeList.length+' '+name+' codes. Stock: '+checkerStock[name],'success');render()}
+window.addCheckerCodes=addCheckerCodes;window.addAnnouncement=addAnnouncement;window.addAdvert=addAdvert;window.addGiftCode=addGiftCode;window.addServiceProvider=addServiceProvider;
+
+/* --- RENDER --- */
 function render(){
- const app=document.getElementById('app');
- if(!session){
-   app.innerHTML=`<div class='min-h-screen flex items-center justify-center p-4'><div class='w-full max-w-[360px] rounded-[20px] bg-[#111] border border-white/10 p-6'><div class='font-syne font-extrabold text-[22px]'>Raaj Admin v2</div><div class='text-[12px] text-zinc-500 mt-1'>Full Agent Wallet + SMS</div><input id='u' placeholder='Username' class='mt-5 w-full h-11 rounded-xl bg-black border border-white/10 px-4 outline-none'><input id='p' type='password' placeholder='Password' class='mt-3 w-full h-11 rounded-xl bg-black border border-white/10 px-4 outline-none'><button onclick='login()' class='mt-4 w-full h-11 rounded-full bg-yellow-400 text-black font-bold'>Login</button></div></div>`; return;
- }
- const totalRev=txs.reduce((s,t)=>s+(t.price||0),0);
- const totalWallet=agents.reduce((s,a)=>s+(a.wallet||0),0);
- const pendingWD=withdraws.filter(w=>w.status==='Pending').length;
- const liveBadge=`LIVE: Bundles=${storeCfg.bundles.mode} | AFA=${storeCfg.afa.mode} | Wallet GH¢${totalWallet} | Pending WD ${pendingWD}`;
+  const app=document.getElementById('app');
+  if(!session){
+    app.innerHTML=`<div class='min-h-screen flex items-center justify-center p-4'><div class='w-full max-w-[360px] rounded-[20px] bg-[#111] border border-white/10 p-6'><div class='font-syne font-extrabold text-[22px]'><span class='text-yellow-400'>RAAJ</span> Admin V4</div><div class='text-[12px] text-zinc-500 mt-1'>Full Control Panel</div><input id='u' placeholder='Username' class='mt-5 w-full h-11 rounded-xl bg-black border border-white/10 px-4 outline-none'><input id='p' type='password' placeholder='Password' class='mt-3 w-full h-11 rounded-xl bg-black border border-white/10 px-4 outline-none'><button onclick='login()' class='mt-4 w-full h-11 rounded-full bg-yellow-400 text-black font-bold'>Login</button></div></div>`;return;
+  }
 
- const tabs=['Dashboard','Agents & Wallet','Transactions','AFA Requests','Withdraws','Bundles & Prices','Checkers & Settings'].map(t=>`<button onclick='tab="${t}";render()' class='h-9 px-3 rounded-full text-[11px] font-bold border whitespace-nowrap ${tab===t?'bg-yellow-400 text-black border-yellow-400':'bg-[#111] text-zinc-300 border-white/10'}'>${t}</button>`).join('');
+  const totalRev=txs.reduce((s,t)=>s+(t.price||0),0);
+  const totalWallet=agents.reduce((s,a)=>s+(a.wallet||0),0);
+  const pendingWD=withdraws.filter(w=>w.status==='Pending').length;
+  const pendingClaims=claimRequests.filter(c=>c.status==='Pending').length;
+  const overdueCount=txs.filter(t=>(t.status==='Processing'||t.status==='Pending')&&((new Date(t.date).getTime()+(deliveryTimer.minutes||10)*60000)<Date.now())).length;
+  const liveBadge=`LIVE: Bundles=${storeCfg.bundles.mode} | AFA=${storeCfg.afa.mode}${storeCfg.afa.toggle===false?' (OFF)':''} | Wallet GH¢${totalWallet} | Pending WD ${pendingWD} | Claims ${pendingClaims}${overdueCount?' | ⚠️ OVERDUE '+overdueCount:''}`;
 
- let content='';
- if(tab==='Dashboard'){
-   content=`<div class='grid md:grid-cols-4 gap-3'><div class='rounded-[16px] bg-[#111] border border-white/10 p-4'><div class='text-[11px] text-zinc-500 uppercase font-bold'>Total Revenue</div><div class='font-extrabold text-[20px] mt-1'>GH¢ ${totalRev}</div></div><div class='rounded-[16px] bg-[#111] border border-white/10 p-4'><div class='text-[11px] text-zinc-500 uppercase font-bold'>Unpaid Commissions (Wallet)</div><div class='font-extrabold text-[20px] mt-1'>GH¢ ${totalWallet}</div><div class='text-[10px] text-zinc-500'>Agents: ${agents.length}</div></div><div class='rounded-[16px] bg-[#111] border border-white/10 p-4'><div class='text-[11px] text-zinc-500 uppercase font-bold'>Transactions</div><div class='font-extrabold text-[20px] mt-1'>${txs.length}</div></div><div class='rounded-[16px] bg-yellow-400 text-black border border-yellow-400 p-4'><div class='text-[11px] uppercase font-bold'>Pending Withdraws</div><div class='font-extrabold text-[20px] mt-1'>${pendingWD}</div></div></div>
-   <div class='mt-4 grid md:grid-cols-2 gap-3'>
-     <div class='rounded-[16px] bg-[#111] border border-white/10 p-4'><div class='font-bold text-[13px]'>How Wallet Works</div><div class='text-[11px] text-zinc-400 mt-2 leading-relaxed'>1. Customer buys via ?ref=AGENTCODE → 10% to direct agent, 5% to parent (grandparent) auto-added to wallet.<br>2. Agent wallet accumulates.<br>3. Admin: Agents & Wallet → Load Wallet (+add for bonus, -deduct), Pay Commission (pays GH¢ wallet balance via MoMo, resets to 0).<br>4. SMS auto-sent if enabled.</div></div>
-     <div class='rounded-[16px] bg-[#111] border border-white/10 p-4'><div class='font-bold text-[13px]'>Quick Actions</div><div class='mt-3 grid grid-cols-2 gap-2'><button onclick='tab="Agents & Wallet";render()' class='h-10 rounded-xl bg-white text-black font-bold text-[11px]'>Manage Wallets</button><button onclick='tab="Withdraws";render()' class='h-10 rounded-xl bg-zinc-800 border border-white/10 font-bold text-[11px]'>Withdraw Requests ${pendingWD?'('+pendingWD+')':''}</button></div></div>
-   </div>
-   <div class='mt-4 rounded-xl bg-yellow-400 text-black px-4 py-2 text-[11px] font-bold'>${liveBadge}</div>`;
- }
- else if(tab==='Agents & Wallet'){
-   content=`<div class='flex items-center justify-between mb-3'><div class='font-bold text-[14px]'>Agents & Subagents - Wallet Load / Pay / Reset</div><button onclick='addAgentManual()' class='h-8 px-3 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>+ Add Agent</button></div>
-   <div class='rounded-[16px] bg-[#111] border border-white/10 overflow-x-auto'>
-   <table class='w-full text-[11px]'><tr class='text-zinc-500 text-[10px] uppercase'><th class='p-3 text-left'>Code</th><th>Name</th><th>Phone</th><th>Parent</th><th>Wallet</th><th>Earnings</th><th>Status</th><th class='text-right'>Actions</th></tr>
-   ${agents.map(a=>`<tr class='border-t border-white/5'><td class='p-3 font-bold'>${a.code}</td><td class='p-3'>${a.name}</td><td class='p-3'>${a.phone}<br><span class='text-[10px] text-zinc-500'>pwd: ${a.password||'123456'}</span></td><td class='p-3'>${a.parent||'-'}</td><td class='p-3 font-bold text-yellow-400'>GH¢ ${a.wallet||0}</td><td class='p-3'>${a.earnings||0}</td><td class='p-3'><span class='px-2 py-0.5 rounded-full text-[10px] ${a.status==='blocked'?'bg-red-500/20 text-red-400':'bg-emerald-500/20 text-emerald-400'}'>${a.status||'active'}</span></td>
-   <td class='p-3'><div class='flex flex-wrap gap-1 justify-end'>
-     <button onclick='loadWallet("${a.code}")' class='h-7 px-2 rounded-full bg-white text-black font-bold text-[10px]'>Load</button>
-     <button onclick='payCommission("${a.code}")' class='h-7 px-2 rounded-full bg-yellow-400 text-black font-bold text-[10px]'>Pay</button>
-     <button onclick='resetPassword("${a.code}")' class='h-7 px-2 rounded-full bg-zinc-700 text-white font-bold text-[10px]'>Reset PW</button>
-     <button onclick='blockAgent("${a.code}")' class='h-7 px-2 rounded-full bg-zinc-800 border border-white/10 text-[10px]'>${a.status==='blocked'?'Unblock':'Block'}</button>
-     <button onclick='deleteAgent("${a.code}")' class='h-7 px-2 rounded-full bg-red-500/20 text-red-400 text-[10px]'>Del</button>
-   </div></td></tr>`).join('')||'<tr><td colspan=8 class="p-6 text-center text-zinc-500">No agents yet - they register via Become Agent on shop</td></tr>'}
-   </table></div>
-   <div class='mt-4 rounded-xl bg-black border border-white/10 p-3 text-[11px] text-zinc-400'>Load Wallet = add bonus or deduct. Example: +20 adds GH¢20, -10 deducts. Pay Commission = sends wallet balance to agent MoMo and resets wallet to 0. SMS sent if enabled in Checkers & Settings.</div>`;
- }
- else if(tab==='Transactions'){
-   content=`<div class='rounded-[16px] bg-[#111] border border-white/10 overflow-x-auto'><table class='w-full text-[11px]'><tr class='text-zinc-500 text-[10px] uppercase'><th class='p-3 text-left'>ID</th><th>Network</th><th>GB</th><th>Price</th><th>Phone</th><th>Agent</th><th>Date</th></tr>${txs.slice().reverse().map(t=>`<tr class='border-t border-white/5'><td class='p-3'>${t.id}</td><td class='p-3'>${t.network}</td><td class='p-3'>${t.gb||''}</td><td class='p-3'>${t.price}</td><td class='p-3'>${t.phone}</td><td class='p-3'>${t.agentCode||'DIRECT'}</td><td class='p-3'>${(t.date||'').slice(0,16)}</td></tr>`).join('')||'<tr><td colspan=7 class="p-6 text-center text-zinc-500">No transactions</td></tr>'}</table></div>`;
- }
- else if(tab==='AFA Requests'){
-   content=`<div class='rounded-[16px] bg-[#111] border border-white/10 overflow-x-auto'><table class='w-full text-[11px]'><tr class='text-zinc-500 text-[10px] uppercase'><th class='p-3 text-left'>ID</th><th>Name</th><th>Phone</th><th>GH Card</th><th>Agent</th><th>Status</th></tr>${afas.slice().reverse().map(a=>`<tr class='border-t border-white/5'><td class='p-3'>${a.id}</td><td class='p-3'>${a.name}</td><td class='p-3'>${a.phone}</td><td class='p-3'>${a.ghCard||''}</td><td class='p-3'>${a.agentCode||'-'}</td><td class='p-3'>${a.status}</td></tr>`).join('')||'<tr><td colspan=6 class="p-6 text-center text-zinc-500">No AFA</td></tr>'}</table></div>`;
- }
- else if(tab==='Withdraws'){
-   content=`<div class='rounded-[16px] bg-[#111] border border-white/10 overflow-x-auto'><table class='w-full text-[11px]'><tr class='text-zinc-500 text-[10px] uppercase'><th class='p-3 text-left'>ID</th><th>Agent</th><th>Phone</th><th>Amount</th><th>Type</th><th>Status</th><th>Action</th></tr>${withdraws.slice().reverse().map(w=>`<tr class='border-t border-white/5'><td class='p-3'>${w.id}</td><td class='p-3'>${w.agentCode} - ${w.name}</td><td class='p-3'>${w.phone}</td><td class='p-3 font-bold'>GH¢ ${w.amount}</td><td class='p-3'>${w.type}</td><td class='p-3'><span class='px-2 py-0.5 rounded-full ${w.status==='Paid'?'bg-emerald-500/20 text-emerald-400':'bg-yellow-500/20 text-yellow-400'}'>${w.status}</span></td><td class='p-3'>${w.status!=='Paid'?`<button onclick='approveWithdraw("${w.id}")' class='h-7 px-2 rounded-full bg-yellow-400 text-black font-bold text-[10px]'>Approve & Pay</button>`:''}</td></tr>`).join('')||'<tr><td colspan=7 class="p-6 text-center text-zinc-500">No withdraws yet - use Pay button in Agents tab to pay commissions</td></tr>'}</table></div>`;
- }
- else if(tab==='Bundles & Prices'){
-   let priceEditors='';
-   for(const net of ['MTN','Telecel','AirtelTigo']){
-     const bundles=bundlePrices[net]||[];
-     priceEditors+=`<div class='rounded-[18px] bg-[#111] border border-white/10 p-4 mt-4'><div class='font-bold text-[13px] flex items-center justify-between'>${net} <button onclick='addBundle("${net}")' class='h-7 px-3 rounded-full bg-yellow-400 text-black text-[11px] font-bold'>+ Add Bundle</button></div><div class='mt-3 grid grid-cols-2 md:grid-cols-4 gap-2'>${bundles.map((b,i)=>`<div class='flex items-center gap-2 bg-black border border-white/10 rounded-xl px-3 h-10'><span class='text-[11px] font-bold w-10'>${b.gb}GB</span><input type='number' value='${b.price}' oninput='bundlePrices["${net}"][${i}].price=parseFloat(this.value)||0' class='flex-1 bg-transparent outline-none text-[11px]'><button onclick='removeBundle("${net}",${i})' class='w-5 h-5 rounded-full bg-red-500/20 text-red-400 text-[10px]'>✕</button></div>`).join('')}</div></div>`;
-   }
-   content=`<div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>Bundles - 3 Modes (Paystack + Redirect) - Primary Editable Now</div>
+  const allTabs=['Dashboard','Orders','Customers','Agents & Wallet','Send & Claim','AFA Requests','Withdraws','Bundles & Prices','Checkers & Stock','Airtime','Delivery Timer','Messages','Announcements','Adverts','Gift Codes','Referrals','Service Providers','Settings'];
+  const tabs=allTabs.map(t=>{const badges={};if(t==='Send & Claim'&&pendingClaims)badges[t]='('+pendingClaims+')';if(t==='Orders'&&overdueCount)badges[t]='⚠️';const badge=badges[t]||'';return`<button onclick='tab="${t}";render()' class='h-9 px-3 rounded-full text-[11px] font-bold border whitespace-nowrap ${tab===t?'bg-yellow-400 text-black border-yellow-400':'bg-[#111] text-zinc-300 border-white/10'}'>${t} ${badge}</button>`}).join('');
+
+  let content='';
+
+  // ===== DASHBOARD =====
+  if(tab==='Dashboard'){
+    content=`<div class='grid md:grid-cols-5 gap-3'>
+      <div class='rounded-[16px] bg-[#111] border border-white/10 p-4'><div class='text-[11px] text-zinc-500 uppercase font-bold'>Total Revenue</div><div class='font-extrabold text-[20px] mt-1'>GH¢ ${totalRev}</div></div>
+      <div class='rounded-[16px] bg-[#111] border border-white/10 p-4'><div class='text-[11px] text-zinc-500 uppercase font-bold'>Unpaid Wallets</div><div class='font-extrabold text-[20px] mt-1'>GH¢ ${totalWallet}</div><div class='text-[10px] text-zinc-500'>Agents: ${agents.length}</div></div>
+      <div class='rounded-[16px] bg-[#111] border border-white/10 p-4'><div class='text-[11px] text-zinc-500 uppercase font-bold'>Transactions</div><div class='font-extrabold text-[20px] mt-1'>${txs.length}</div><div class='text-[10px] text-zinc-500'>Customers: ${customers.length}</div></div>
+      <div class='rounded-[16px] bg-yellow-400 text-black border border-yellow-400 p-4'><div class='text-[11px] uppercase font-bold'>Pending WD</div><div class='font-extrabold text-[20px] mt-1'>${pendingWD}</div></div>
+      ${overdueCount>0?`<div class='rounded-[16px] bg-red-500 text-white border border-red-500 p-4 overdue-flash'><div class='text-[11px] uppercase font-bold'>⚠️ Overdue</div><div class='font-extrabold text-[20px] mt-1'>${overdueCount}</div></div>`:`<div class='rounded-[16px] bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 p-4'><div class='text-[11px] uppercase font-bold'>✅ No Overdue</div></div>`}
+    </div>
+    <div class='mt-4 grid md:grid-cols-2 gap-3'>
+      <div class='rounded-[16px] bg-[#111] border border-white/10 p-4'><div class='font-bold text-[13px]'>System Overview</div><div class='text-[11px] text-zinc-400 mt-2 leading-relaxed'>Bundles Mode: <b class='text-yellow-400'>${storeCfg.bundles.mode}</b> | AFA Mode: <b class='text-yellow-400'>${storeCfg.afa.mode}</b>${storeCfg.afa.toggle===false?' <span class="text-red-400">(OUT OF STOCK)</span>':''}<br>Redirect Toggle: <b>${storeCfg.bundles.redirect_toggle!==false?'ON':'OFF'}</b> | Airtime Redirect: <b>${storeCfg.bundles.airtime_redirect_toggle!==false?'ON':'OFF'}</b><br>Delivery Timer: ${deliveryTimer.enabled?'ON '+deliveryTimer.minutes+'mins':'OFF'}<br>SMS: ${storeCfg.sms.enabled?'ON':'OFF'}<br>Agents: ${agents.length} (Tier1=${agents.filter(a=>a.tier===1||!a.tier).length} Tier2=${agents.filter(a=>a.tier===2).length} Tier3=${agents.filter(a=>a.tier===3).length})<br>Overdue Alert: ${overdueCount>0?'⚠️ YES '+overdueCount:'✅ None'}</div></div>
+      <div class='rounded-[16px] bg-[#111] border border-white/10 p-4'><div class='font-bold text-[13px]'>Quick Actions</div><div class='mt-3 grid grid-cols-3 gap-2'><button onclick='tab="Orders";render()' class='h-10 rounded-xl bg-white text-black font-bold text-[11px]'>Orders</button><button onclick='tab="Agents & Wallet";render()' class='h-10 rounded-xl bg-zinc-800 border border-white/10 font-bold text-[11px]'>Wallets</button><button onclick='tab="Announcements";render()' class='h-10 rounded-xl bg-yellow-400 text-black font-bold text-[11px]'>Announce</button></div><div class='mt-2 grid grid-cols-3 gap-2'><button onclick='tab="Bundles & Prices";render()' class='h-10 rounded-xl bg-zinc-800 border border-white/10 font-bold text-[11px]'>Bundles</button><button onclick='tab="Send & Claim";render()' class='h-10 rounded-xl bg-emerald-500 text-white font-bold text-[11px]'>Claims${pendingClaims?' ('+pendingClaims+')':''}</button><button onclick='tab="Settings";render()' class='h-10 rounded-xl bg-zinc-800 border border-white/10 font-bold text-[11px]'>Settings</button></div></div>
+    </div>
+    <div class='mt-4 rounded-xl bg-yellow-400 text-black px-4 py-2 text-[11px] font-bold'>${liveBadge}</div>`;
+  }
+
+  // ===== ORDERS (NEW - Requirement 1,5,6) =====
+  else if(tab==='Orders'){
+    const statusOpts=['Pending','Processing','Delivered','Failed','Cancelled'];
+    const statusColors={Pending:'bg-yellow-500/20 text-yellow-400',Processing:'bg-blue-500/20 text-blue-400',Delivered:'bg-emerald-500/20 text-emerald-400',Failed:'bg-red-500/20 text-red-400',Cancelled:'bg-zinc-500/20 text-zinc-400'};
+    const timerMins=deliveryTimer.minutes||10;const now=Date.now();
+    content=`<div class='flex items-center justify-between mb-3'><div class='font-bold text-[14px]'>All Orders - Change Status</div><button onclick='changeMultipleOrderStatus()' class='h-8 px-3 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>⚡ Change Selected</button></div>
+    <div class='text-[11px] text-zinc-400 mb-2'>Manual payments start at Pending. Paystack/redirect orders start at Processing. Overdue orders flash red.</div>
+    <div class='rounded-[16px] bg-[#111] border border-white/10 overflow-x-auto'>
+    <table class='w-full text-[11px]'><tr class='text-zinc-500 text-[10px] uppercase'><th class='p-3 text-left'><input type='checkbox' onchange='document.querySelectorAll(".order-check").forEach(c=>c.checked=this.checked)'></th><th class='p-3 text-left'>ID</th><th>Product</th><th>Network</th><th>GB/Amt</th><th>Price</th><th>Phone</th><th>Agent</th><th>Date</th><th>Payment</th><th>Status</th><th>Action</th></tr>
+    ${txs.slice().reverse().map(t=>{const isOverdue=(t.status==='Processing'||t.status==='Pending')&&((new Date(t.date).getTime()+timerMins*60000)<now);return`<tr class='border-t border-white/5 ${isOverdue?'overdue-flash':''}'><td class='p-3'><input type='checkbox' class='order-check' value='${t.id}'></td><td class='p-3 font-bold'>${t.id}</td><td class='p-3'>${t.product||'Data'}</td><td class='p-3'>${t.network}</td><td class='p-3'>${t.gb||''}</td><td class='p-3'>${t.price}</td><td class='p-3'>${t.phone}</td><td class='p-3'>${t.agentCode||'DIRECT'}</td><td class='p-3'>${(t.date||'').slice(0,16)}</td><td class='p-3'>${t.payment_method||'-'}</td><td class='p-3'><span class='px-2 py-0.5 rounded-full text-[10px] ${statusColors[t.status]||statusColors.Pending}'>${t.status||'Pending'}${isOverdue?' ⚠️':''}</span></td><td class='p-3'><select onchange='changeOrderStatus("${t.id}",this.value)' class='h-7 rounded bg-black border border-white/10 text-[10px] px-1'>${statusOpts.map(s=>`<option ${t.status===s?'selected':''}>${s}</option>`).join('')}</select></td></tr>`}).join('')||'<tr><td colspan=12 class="p-6 text-center text-zinc-500">No orders</td></tr>'}
+    </table></div>`;
+  }
+
+  // ===== CUSTOMERS (NEW - Requirement 2) =====
+  else if(tab==='Customers'){
+    content=`<div class='font-bold text-[14px] mb-3'>Customers - ${customers.length}</div>
+    <div class='rounded-[16px] bg-[#111] border border-white/10 overflow-x-auto'>
+    <table class='w-full text-[11px]'><tr class='text-zinc-500 text-[10px] uppercase'><th class='p-3 text-left'>Phone</th><th>Name</th><th>Email</th><th>Referral Code</th><th>Orders</th><th>Created</th><th>Action</th></tr>
+    ${customers.map(c=>`<tr class='border-t border-white/5'><td class='p-3 font-bold'>${c.phone}</td><td class='p-3'>${c.name}</td><td class='p-3'>${c.email||'-'}</td><td class='p-3 text-yellow-400 font-bold'>${c.referralCode||'-'}</td><td class='p-3'>${(c.orders||[]).length}</td><td class='p-3'>${(c.created||'').slice(0,10)}</td><td class='p-3'><button onclick='resetCustomerPassword("${c.phone}")' class='h-7 px-2 rounded-full bg-yellow-400 text-black font-bold text-[10px]'>Reset PW</button></td></tr>`).join('')||'<tr><td colspan=7 class="p-6 text-center text-zinc-500">No customers yet</td></tr>'}
+    </table></div>`;
+  }
+
+  // ===== AGENTS & WALLET (preserved + 3-tier + commission) =====
+  else if(tab==='Agents & Wallet'){
+    content=`<div class='flex items-center justify-between mb-3'><div class='font-bold text-[14px]'>Agents & Subagents (3-Tier) - Wallet Load / Pay / Reset</div><button onclick='addAgentManual()' class='h-8 px-3 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>+ Add Agent</button></div>
+    <div class='rounded-[16px] bg-[#111] border border-white/10 overflow-x-auto'>
+    <table class='w-full text-[11px]'><tr class='text-zinc-500 text-[10px] uppercase'><th class='p-3 text-left'>Code</th><th>Name</th><th>Phone</th><th>Parent</th><th>Tier</th><th>Comm%</th><th>Wallet</th><th>Earnings</th><th>Status</th><th class='text-right'>Actions</th></tr>
+    ${agents.map(a=>`<tr class='border-t border-white/5'><td class='p-3 font-bold'>${a.code}</td><td class='p-3'>${a.name}</td><td class='p-3'>${a.phone}</td><td class='p-3'>${a.parent||'-'}</td><td class='p-3'>${a.tier||1}</td><td class='p-3'>${a.commission||10}%</td><td class='p-3 font-bold text-yellow-400'>GH¢ ${a.wallet||0}</td><td class='p-3'>${a.earnings||0}</td><td class='p-3'><span class='px-2 py-0.5 rounded-full text-[10px] ${a.status==='blocked'?'bg-red-500/20 text-red-400':'bg-emerald-500/20 text-emerald-400'}'>${a.status||'active'}</span></td>
+    <td class='p-3'><div class='flex flex-wrap gap-1 justify-end'>
+      <button onclick='loadWallet("${a.code}")' class='h-7 px-2 rounded-full bg-white text-black font-bold text-[10px]'>Load</button>
+      <button onclick='payCommission("${a.code}")' class='h-7 px-2 rounded-full bg-yellow-400 text-black font-bold text-[10px]'>Pay</button>
+      <button onclick='resetAgentPassword("${a.code}")' class='h-7 px-2 rounded-full bg-zinc-700 text-white font-bold text-[10px]'>Reset PW</button>
+      <button onclick='blockAgent("${a.code}")' class='h-7 px-2 rounded-full bg-zinc-800 border border-white/10 text-[10px]'>${a.status==='blocked'?'Unblock':'Block'}</button>
+      <button onclick='deleteAgent("${a.code}")' class='h-7 px-2 rounded-full bg-red-500/20 text-red-400 text-[10px]'>Del</button>
+    </div></td></tr>`).join('')||'<tr><td colspan=10 class="p-6 text-center text-zinc-500">No agents yet</td></tr>'}
+    </table></div>
+    <div class='mt-4 rounded-xl bg-black border border-white/10 p-3 text-[11px] text-zinc-400'>3-Tier Agent System: Tier 1 (Direct) default 10%, Tier 2 (Parent of Direct) 5%, Tier 3 (Grandparent) additional. Commission % editable per agent. Wallet = accumulated unpaid. Load = add/deduct. Pay = pay out & reset to 0. SMS auto-sent if enabled.</div>`;
+  }
+
+  // ===== SEND & CLAIM (NEW - Requirement 7) =====
+  else if(tab==='Send & Claim'){
+    const pending=claimRequests.filter(c=>c.status==='Pending');
+    content=`<div class='font-bold text-[14px] mb-3'>Send & Claim - Agent Wallet Topup</div>
+    ${pending.length?`<div class='mb-4 rounded-xl bg-yellow-400/10 border border-yellow-400/30 p-3'><div class='font-bold text-[12px] text-yellow-400'>⏳ Pending Claims (${pending.length})</div><div class='mt-2 grid gap-2'>${pending.map(c=>`
+      <div class='flex items-center justify-between bg-black rounded-xl px-4 py-3 border border-white/10'>
+        <div class='text-[11px]'><b>${c.agentCode}</b> - ${c.name}<br>GH¢${c.amount} | TXID: ${c.txid} | ${c.phone}<br>${(c.date||'').slice(0,16)}</div>
+        <div class='flex gap-2'><button onclick='approveClaim("${c.id}")' class='h-8 px-3 rounded-full bg-emerald-500 text-white font-bold text-[11px]'>✓ Approve</button><button onclick='disapproveClaim("${c.id}")' class='h-8 px-3 rounded-full bg-red-500 text-white font-bold text-[11px]'>✕ Disapprove</button></div>
+      </div>`).join('')}</div></div>`:''}
+    <div class='rounded-[16px] bg-[#111] border border-white/10 overflow-x-auto'>
+    <table class='w-full text-[11px]'><tr class='text-zinc-500 text-[10px] uppercase'><th class='p-3 text-left'>ID</th><th>Agent</th><th>Phone</th><th>Amount</th><th>TXID</th><th>Status</th><th>Action</th></tr>
+    ${claimRequests.slice().reverse().map(c=>`<tr class='border-t border-white/5'><td class='p-3'>${c.id}</td><td class='p-3'>${c.agentCode} - ${c.name}</td><td class='p-3'>${c.phone}</td><td class='p-3 font-bold'>GH¢ ${c.amount}</td><td class='p-3'>${c.txid}</td><td class='p-3'><span class='px-2 py-0.5 rounded-full ${c.status==='Approved'?'bg-emerald-500/20 text-emerald-400':c.status==='Disapproved'?'bg-red-500/20 text-red-400':'bg-yellow-500/20 text-yellow-400'}'>${c.status}</span></td><td class='p-3'>${c.status==='Pending'?`<button onclick='approveClaim("${c.id}")' class='h-6 px-2 rounded-full bg-emerald-500 text-white text-[9px] font-bold'>✓</button><button onclick='disapproveClaim("${c.id}")' class='h-6 px-2 rounded-full bg-red-500 text-white text-[9px] font-bold'>✕</button>`:''}</td></tr>`).join('')||'<tr><td colspan=7 class="p-6 text-center text-zinc-500">No claims yet</td></tr>'}
+    </table></div>
+    <div class='mt-3 text-[11px] text-zinc-400'>Approve = credits agent wallet instantly + SMS sent. Disapprove = sends rejection SMS. Agent uses Send & Claim button on their dashboard.</div>`;
+  }
+
+  // ===== AFA REQUESTS (preserved + status + toggle) =====
+  else if(tab==='AFA Requests'){
+    const statusOpts=['Pending','Processing','Delivered','Failed'];
+    const statusColors={Pending:'bg-yellow-500/20 text-yellow-400',Processing:'bg-blue-500/20 text-blue-400',Delivered:'bg-emerald-500/20 text-emerald-400',Failed:'bg-red-500/20 text-red-400'};
+    content=`<div class='font-bold text-[14px] mb-3'>AFA Requests - Toggle: <button onclick='storeCfg.afa.toggle=!storeCfg.afa.toggle;saveStore()' class='h-7 px-3 rounded-full ${storeCfg.afa.toggle!==false?'bg-emerald-500 text-white':'bg-red-500 text-white'} font-bold text-[10px]'>${storeCfg.afa.toggle!==false?'ON - Available':'OUT OF STOCK'}</button></div>
+    <div class='rounded-[16px] bg-[#111] border border-white/10 overflow-x-auto'>
+    <table class='w-full text-[11px]'><tr class='text-zinc-500 text-[10px] uppercase'><th class='p-3 text-left'>ID</th><th>Name</th><th>Phone</th><th>GH Card</th><th>DOB</th><th>Agent</th><th>Payment</th><th>Status</th><th>Action</th></tr>
+    ${afas.slice().reverse().map(a=>`<tr class='border-t border-white/5'><td class='p-3'>${a.id}</td><td class='p-3'>${a.name}</td><td class='p-3'>${a.phone}</td><td class='p-3'>${a.ghCard||''}</td><td class='p-3'>${a.dob||''}</td><td class='p-3'>${a.agentCode||'-'}</td><td class='p-3'>${a.payment_method||'manual'}</td><td class='p-3'><span class='px-2 py-0.5 rounded-full text-[10px] ${statusColors[a.status]||statusColors.Pending}'>${a.status}</span></td><td class='p-3'><select onchange='changeOrderStatus("${a.id}",this.value)' class='h-7 rounded bg-black border border-white/10 text-[10px] px-1'>${statusOpts.map(s=>`<option ${a.status===s?'selected':''}>${s}</option>`).join('')}</select></td></tr>`).join('')||'<tr><td colspan=9 class="p-6 text-center text-zinc-500">No AFA requests</td></tr>'}
+    </table></div>`;
+  }
+
+  // ===== WITHDRAWS (preserved) =====
+  else if(tab==='Withdraws'){
+    content=`<div class='rounded-[16px] bg-[#111] border border-white/10 overflow-x-auto'>
+    <table class='w-full text-[11px]'><tr class='text-zinc-500 text-[10px] uppercase'><th class='p-3 text-left'>ID</th><th>Agent</th><th>Phone</th><th>Amount</th><th>Type</th><th>Status</th><th>Action</th></tr>
+    ${withdraws.slice().reverse().map(w=>`<tr class='border-t border-white/5'><td class='p-3'>${w.id}</td><td class='p-3'>${w.agentCode} - ${w.name}</td><td class='p-3'>${w.phone}</td><td class='p-3 font-bold'>GH¢ ${w.amount}</td><td class='p-3'>${w.type}</td><td class='p-3'><span class='px-2 py-0.5 rounded-full ${w.status==='Paid'?'bg-emerald-500/20 text-emerald-400':'bg-yellow-500/20 text-yellow-400'}'>${w.status}</span></td><td class='p-3'>${w.status!=='Paid'?`<button onclick='approveWithdraw("${w.id}")' class='h-7 px-2 rounded-full bg-yellow-400 text-black font-bold text-[10px]'>Approve & Pay</button>`:''}</td></tr>`).join('')||'<tr><td colspan=7 class="p-6 text-center text-zinc-500">No withdraws yet</td></tr>'}
+    </table></div>`;
+  }
+
+  // ===== BUNDLES & PRICES (preserved from original + toggle + airtime redirect toggle) =====
+  else if(tab==='Bundles & Prices'){
+    let priceEditors='';
+    for(const net of['MTN','Telecel','AirtelTigo']){
+      const bundles=bundlePrices[net]||[];
+      priceEditors+=`<div class='rounded-[18px] bg-[#111] border border-white/10 p-4 mt-4'><div class='font-bold text-[13px] flex items-center justify-between'>${net} <button onclick='addBundle("${net}")' class='h-7 px-3 rounded-full bg-yellow-400 text-black text-[11px] font-bold'>+ Add Bundle</button></div><div class='mt-3 grid grid-cols-2 md:grid-cols-4 gap-2'>${bundles.map((b,i)=>`<div class='flex items-center gap-2 bg-black border border-white/10 rounded-xl px-3 h-10'><span class='text-[11px] font-bold w-10'>${b.gb}GB</span><input type='number' value='${b.price}' oninput='bundlePrices["${net}"][${i}].price=parseFloat(this.value)||0' class='flex-1 bg-transparent outline-none text-[11px]'><button onclick='removeBundle("${net}",${i})' class='w-5 h-5 rounded-full bg-red-500/20 text-red-400 text-[10px]'>✕</button></div>`).join('')}</div></div>`;
+    }
+    content=`<div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>Bundles - Hybrid Payment System (3 Modes)</div>
 <div class='mt-3 grid gap-3'>
 <label class='rounded-xl p-3 border cursor-pointer ${storeCfg.bundles.mode==='redirect'?'bg-yellow-400/10 border-yellow-400/30':'bg-[#0f0f0f] border-white/10'} flex gap-2'>
 <input type='radio' ${storeCfg.bundles.mode==='redirect'?'checked':''} onchange='storeCfg.bundles.mode="redirect";render()'>
-<div class='flex-1'><div class='font-bold text-[12px]'>1. Redirect ON (Wallet Auto-Delivers) - PRIMARY EDITABLE</div>
-<div class='mt-2'><div class='text-[10px] text-zinc-500 font-bold uppercase'>Primary URL (EDIT HERE - Any URL works)</div>
-<input value='${storeCfg.bundles.primary}' oninput='storeCfg.bundles.primary=this.value;storeCfg.bundles.forward_primary=this.value' class='mt-1 w-full h-10 rounded-xl bg-black border border-yellow-400/50 px-3 text-[11px] text-yellow-300 outline-none' placeholder='https://cheapdata.shop/shop/...'>
-<div class='mt-1 text-[10px] text-zinc-500'>Paste cheapdata, budgetdata, or any reseller store link. This is where Buy Now goes.</div></div>
+<div class='flex-1'><div class='font-bold text-[12px]'>1. Redirect ON (cheapdata/budgetdata delivers)</div>
+<div class='mt-2'><div class='text-[10px] text-zinc-500 font-bold uppercase'>Primary URL (EDIT - Any URL works)</div>
+<input value='${storeCfg.bundles.primary}' oninput='storeCfg.bundles.primary=this.value;storeCfg.bundles.forward_primary=this.value' class='mt-1 w-full h-10 rounded-xl bg-black border border-yellow-400/50 px-3 text-[11px] text-yellow-300 outline-none'></div>
 <div class='mt-2'><div class='text-[10px] text-zinc-500 font-bold uppercase'>Secondary URL (Backup)</div>
-<input value='${storeCfg.bundles.secondary}' oninput='storeCfg.bundles.secondary=this.value' class='mt-1 w-full h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px] outline-none' placeholder='https://agent.budgetdata.store/...'></div>
+<input value='${storeCfg.bundles.secondary}' oninput='storeCfg.bundles.secondary=this.value' class='mt-1 w-full h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px] outline-none'></div>
+<div class='mt-2'><label class='text-[10px] flex items-center gap-1'><input type='checkbox' ${storeCfg.bundles.redirect_toggle!==false?'checked':''} onchange='storeCfg.bundles.redirect_toggle=this.checked'> Redirect ON (toggle off = no redirect even in redirect mode)</label></div>
 </div></label>
-
 <label class='rounded-xl p-3 border cursor-pointer ${storeCfg.bundles.mode==='hybrid'?'bg-yellow-400/10 border-yellow-400/30':'bg-[#0f0f0f] border-white/10'} flex gap-2'>
 <input type='radio' ${storeCfg.bundles.mode==='hybrid'?'checked':''} onchange='storeCfg.bundles.mode="hybrid";render()'>
 <div class='flex-1'><div class='font-bold text-[12px]'>2. Own Paystack + Redirect (Hybrid) - You collect, then forward</div>
-<div class='mt-2'><div class='text-[10px] text-zinc-500'>Your Paystack Link (Money to YOU)</div>
-<input value='${storeCfg.bundles.my_paystack_link}' oninput='storeCfg.bundles.my_paystack_link=this.value' class='mt-1 w-full h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]' placeholder='https://paystack.com/pay/raaj-bundles'></div>
-<div class='mt-2 flex gap-2 items-center'><label class='text-[10px] flex items-center gap-1'><input type='checkbox' ${storeCfg.bundles.auto_forward?'checked':''} onchange='storeCfg.bundles.auto_forward=this.checked'> Auto-forward after pay</label></div>
-<div class='mt-1 text-[10px] text-zinc-500'>Forward to: ${storeCfg.bundles.forward_primary.slice(0,50)}... (uses Primary above)</div>
-</div></label>
-
+<div class='mt-2'><div class='text-[10px] text-zinc-500'>Your Paystack Link</div>
+<input value='${storeCfg.bundles.my_paystack_link}' oninput='storeCfg.bundles.my_paystack_link=this.value' class='mt-1 w-full h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'></div>
+<div class='mt-2 flex gap-2 items-center'><label class='text-[10px] flex items-center gap-1'><input type='checkbox' ${storeCfg.bundles.auto_forward?'checked':''} onchange='storeCfg.bundles.auto_forward=this.checked'> Auto-forward after pay</label></div></div></label>
 <label class='rounded-xl p-3 border cursor-pointer ${storeCfg.bundles.mode==='paystack_only'?'bg-yellow-400/10 border-yellow-400/30':'bg-[#0f0f0f] border-white/10'} flex gap-2'>
 <input type='radio' ${storeCfg.bundles.mode==='paystack_only'?'checked':''} onchange='storeCfg.bundles.mode="paystack_only";render()'>
-<div class='flex-1'><div class='font-bold text-[12px]'>3. Own Paystack Only (Manual delivery by you)</div>
-<div class='text-[10px] text-zinc-500 mt-1'>Customer pays YOUR Paystack, you deliver bundle manually from cheapdata/budgetdata admin.</div></div></label>
+<div class='flex-1'><div class='font-bold text-[12px]'>3. Own Paystack Only (Manual delivery by you)</div><div class='text-[10px] text-zinc-500 mt-1'>Customer pays YOU, you deliver manually from cheapdata/budgetdata admin.</div></div></label>
 </div>
-<button onclick='saveStore()' class='mt-3 h-10 px-5 rounded-full bg-yellow-400 text-black font-bold text-[12px]'>Save Primary + Mode - LIVE</button>
+<div class='mt-3 grid gap-2'>
+<label class='text-[10px] flex items-center gap-1'><input type='checkbox' ${storeCfg.bundles.redirect_toggle!==false?'checked':''} onchange='storeCfg.bundles.redirect_toggle=this.checked'> Redirect Toggle (ON=redirect, OFF=in-house for ALL products)</label>
+<label class='text-[10px] flex items-center gap-1'><input type='checkbox' ${storeCfg.bundles.airtime_redirect_toggle!==false?'checked':''} onchange='storeCfg.bundles.airtime_redirect_toggle=this.checked'> Airtime Redirect Toggle (ON=redirect, OFF=in-house)</label>
+</div>
+<button onclick='saveStore()' class='mt-3 h-10 px-5 rounded-full bg-yellow-400 text-black font-bold text-[12px]'>Save Mode + Toggle Settings - LIVE</button>
 </div>${priceEditors}<button onclick='saveBundles()' class='mt-4 h-10 px-5 rounded-full bg-white text-black font-bold text-[11px]'>Save All Prices</button>`;
- }
- else if(tab==='Checkers & Settings'){
-   content=`<div class='grid gap-4'>
-     <div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>Results Checkers Prices</div><div class='mt-3 grid md:grid-cols-3 gap-3'>
-       <div><div class='text-[11px] text-zinc-500'>WASSCE</div><input type='number' value='${checkerPrices.WASSCE}' oninput='checkerPrices.WASSCE=parseFloat(this.value)||0' class='w-full h-10 rounded-xl bg-black border border-white/10 px-3 mt-1 text-[13px]'></div>
-       <div><div class='text-[11px] text-zinc-500'>BECE</div><input type='number' value='${checkerPrices.BECE}' oninput='checkerPrices.BECE=parseFloat(this.value)||0' class='w-full h-10 rounded-xl bg-black border border-white/10 px-3 mt-1 text-[13px]'></div>
-       <div><div class='text-[11px] text-zinc-500'>CSSPS</div><input type='number' value='${checkerPrices.CSSPS}' oninput='checkerPrices.CSSPS=parseFloat(this.value)||0' class='w-full h-10 rounded-xl bg-black border border-white/10 px-3 mt-1 text-[13px]'></div>
-     </div></div>
-     <div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>Delivery Note (empty = hidden, no Instant Delivery)</div><textarea oninput='storeCfg.delivery_note=this.value' class='mt-2 w-full min-h-[70px] rounded-xl bg-black border border-white/10 p-3 text-[13px]'>${storeCfg.delivery_note||''}</textarea></div>
-     <div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>AFA Mode</div><div class='mt-2 grid md:grid-cols-2 gap-3'><label class='rounded-xl p-3 border cursor-pointer ${storeCfg.afa.mode==='manual'?'bg-yellow-400/10 border-yellow-400/30':'bg-black border-white/10'} flex gap-2'><input type='radio' ${storeCfg.afa.mode==='manual'?'checked':''} onchange='storeCfg.afa.mode="manual";render()'><div class='flex-1'><div class='font-bold text-[11px]'>Manual MoMo</div><input value='${storeCfg.afa.momo_number}' oninput='storeCfg.afa.momo_number=this.value' class='mt-1 w-full h-7 rounded-lg bg-black border border-white/10 px-2 text-[11px]'><input value='${storeCfg.afa.momo_name}' oninput='storeCfg.afa.momo_name=this.value' class='mt-1 w-full h-7 rounded-lg bg-black border border-white/10 px-2 text-[11px]'></div></label><label class='rounded-xl p-3 border cursor-pointer ${storeCfg.afa.mode==='paystack'?'bg-yellow-400/10 border-yellow-400/30':'bg-black border-white/10'} flex gap-2'><input type='radio' ${storeCfg.afa.mode==='paystack'?'checked':''} onchange='storeCfg.afa.mode="paystack";render()'><div class='flex-1'><div class='font-bold text-[11px]'>Own Paystack</div><input value='${storeCfg.afa.my_paystack_link}' oninput='storeCfg.afa.my_paystack_link=this.value' class='mt-1 w-full h-7 rounded-lg bg-black border border-white/10 px-2 text-[11px]'></div></label></div></div>
-     <div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>SMS Notifications (Ghana - Hubtel / mNotify)</div><div class='text-[11px] text-zinc-500 mt-1'>Enable to auto-send SMS on wallet load, pay, transactions. Leave disabled to just log in console.</div><div class='mt-3 grid gap-2'><label class='flex items-center gap-2 text-[12px]'><input type='checkbox' ${storeCfg.sms.enabled?'checked':''} onchange='storeCfg.sms.enabled=this.checked'> Enable SMS</label><div class='grid md:grid-cols-3 gap-2'><input value='${storeCfg.sms.provider}' oninput='storeCfg.sms.provider=this.value' placeholder='provider hubtel/mnotify' class='h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'><input value='${storeCfg.sms.sender}' oninput='storeCfg.sms.sender=this.value' placeholder='Sender ID RaajData' class='h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'><input value='${storeCfg.sms.api_key}' oninput='storeCfg.sms.api_key=this.value' type='password' placeholder='API Key' class='h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'></div><div class='text-[10px] text-zinc-500'>For production, put SMS in Supabase Edge Function to hide key. Hubtel: https://sms.hubtel.com/v1/messages/send</div></div></div>
-     <div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>Supabase</div><div class='mt-2 grid md:grid-cols-2 gap-2'><input value='${supaCfg.url}' oninput='supaCfg.url=this.value' class='h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'><input value='${supaCfg.anonKey}' oninput='supaCfg.anonKey=this.value' placeholder='eyJhbG...' class='h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'></div><button onclick='localStorage.setItem("raaj_supabase_config",JSON.stringify(supaCfg));alert("Supabase saved")' class='mt-2 h-8 px-3 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>Save Supabase</button></div>
-     <button onclick='saveCheckers()' class='h-11 px-6 rounded-full bg-yellow-400 text-black font-bold text-[12px]'>Save All Checkers + Delivery + SMS</button>
-   </div>`;
- }
+  }
 
- app.innerHTML=`<header class='sticky top-0 z-10 bg-black/90 backdrop-blur border-b border-white/10'><div class='mx-auto max-w-[1200px] px-4 h-[56px] flex items-center justify-between'><div class='font-syne font-extrabold'>Raaj Admin v2 - Wallet + SMS</div><div class='flex items-center gap-2'><span class='text-[10px] bg-yellow-400 text-black px-2 py-1 rounded-full font-bold'>${storeCfg.bundles.mode.toUpperCase()}</span><button onclick='localStorage.removeItem("raaj_admin_session");location.reload()' class='text-[11px] text-zinc-500'>Logout</button></div></div></header><div class='mx-auto max-w-[1200px] px-4 py-4'><div class='rounded-xl bg-yellow-400 text-black px-4 py-2 text-[11px] font-bold mb-3'>${liveBadge}</div><div class='flex gap-2 overflow-x-auto pb-2'>${tabs}</div><div class='mt-4'>${content}</div></div>`;
+  // ===== CHECKERS & STOCK (NEW - Requirement 9) =====
+  else if(tab==='Checkers & Stock'){
+    content=`<div class='grid gap-4'>
+      <div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>Results Checkers - Prices & Stock</div><div class='text-[11px] text-zinc-500 mt-1'>Stock = 0 = Out of Stock. Customers CANNOT purchase when out of stock.</div><div class='text-[11px] text-zinc-500'>AFA and checkers NEVER redirect - processed in-house with Paystack/manual to ${MOMO_NUMBER} using customer contact as reference.</div><div class='mt-3 grid md:grid-cols-3 gap-3'>
+        ${['WASSCE','BECE','CSSPS'].map(name=>`<div class='rounded-xl bg-black border border-white/10 p-4'><div class='font-bold text-[12px]'>${name}</div><div class='mt-2 grid gap-2'><div><div class='text-[10px] text-zinc-500'>Price (GH¢)</div><input type='number' value='${checkerPrices[name]||0}' oninput='checkerPrices["${name}"]=parseFloat(this.value)||0' class='w-full h-9 rounded-lg bg-black border border-white/10 px-2 text-[11px]'></div><div><div class='text-[10px] text-zinc-500'>Stock Count</div><input type='number' value='${checkerStock[name]||0}' oninput='checkerStock["${name}"]=parseInt(this.value)||0' class='w-full h-9 rounded-lg bg-black border border-white/10 px-2 text-[11px]'></div><div class='text-[10px] ${checkerStock[name]>0?'text-emerald-400':'text-red-400'} font-bold'>${checkerStock[name]>0?'✅ In Stock ('+checkerStock[name]+')':'❌ Out of Stock'}</div></div></div>`).join('')}
+      </div></div>
+      <div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>Add Checker Codes (Stock)</div><div class='text-[11px] text-zinc-500 mt-1'>Enter PIN codes separated by commas. Each code = 1 stock unit. Codes reveal to customer ONLY after payment confirmation.</div><div class='mt-3 grid gap-2'>${['WASSCE','BECE','CSSPS'].map(name=>`<div class='flex items-center gap-2'><span class='text-[11px] font-bold w-16'>${name}:</span><input id='codes_${name}' placeholder='PIN1,PIN2,PIN3...' class='flex-1 h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'><button onclick='addCheckerCodes("${name}")' class='h-9 px-3 rounded-full bg-yellow-400 text-black font-bold text-[10px]'>Add</button></div>`).join('')}</div></div>
+      <button onclick='saveCheckers()' class='h-11 px-6 rounded-full bg-yellow-400 text-black font-bold text-[12px]'>Save Checkers + Stock</button>
+    </div>`;
+  }
+
+  // ===== AIRTIME (NEW - Requirement 11) =====
+  else if(tab==='Airtime'){
+    content=`<div class='grid gap-4'>
+      <div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>Airtime Sales - All Networks</div><div class='text-[11px] text-zinc-500 mt-1'>Toggle on/off, set min/max. On=in stock, Off=out of stock. Can connect to service providers for instant crediting (manual orders are manual).</div>
+      <div class='mt-3 grid md:grid-cols-3 gap-3'>
+        ${['MTN','Telecel','AirtelTigo'].map(net=>`<div class='rounded-xl bg-black border border-white/10 p-4'><div class='font-bold text-[12px]'>${net}</div><div class='mt-2 grid gap-2'><label class='flex items-center gap-2 text-[11px]'><input type='checkbox' ${airtimeCfg[net]?.on?'checked':''} onchange='airtimeCfg["${net}"].on=this.checked'> In Stock / Active</label><div class='grid grid-cols-2 gap-2'><div><div class='text-[10px] text-zinc-500'>Min (GH¢)</div><input type='number' value='${airtimeCfg[net]?.min||1}' oninput='airtimeCfg["${net}"].min=parseInt(this.value)||1' class='w-full h-9 rounded-lg bg-black border border-white/10 px-2 text-[11px]'></div><div><div class='text-[10px] text-zinc-500'>Max (GH¢)</div><input type='number' value='${airtimeCfg[net]?.max||500}' oninput='airtimeCfg["${net}"].max=parseInt(this.value)||500' class='w-full h-9 rounded-lg bg-black border border-white/10 px-2 text-[11px]'></div></div></div></div>`).join('')}
+      </div></div>
+      <button onclick='saveAirtime()' class='h-11 px-6 rounded-full bg-yellow-400 text-black font-bold text-[12px]'>Save Airtime Settings</button>
+    </div>`;
+  }
+
+  // ===== DELIVERY TIMER (NEW - Requirement 3) =====
+  else if(tab==='Delivery Timer'){
+    content=`<div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>🚚 Delivery Timer / Tracker</div><div class='text-[11px] text-zinc-500 mt-1'>Shows countdown on shop. Admin-controlled only. Overdue orders are detected based on this timer.</div>
+    <div class='mt-3 grid gap-3'>
+      <label class='flex items-center gap-2 text-[12px]'><input type='checkbox' ${deliveryTimer.enabled?'checked':''} onchange='deliveryTimer.enabled=this.checked'> Show Timer on Shop</label>
+      <div class='grid md:grid-cols-2 gap-2'>
+        <div><div class='text-[10px] text-zinc-500'>Duration (minutes)</div><input type='number' value='${deliveryTimer.minutes||10}' oninput='deliveryTimer.minutes=parseInt(this.value)||10' class='w-full h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'></div>
+        <div><div class='text-[10px] text-zinc-500'>Label Text</div><input value='${deliveryTimer.label||"Delivering in"}' oninput='deliveryTimer.label=this.value' class='w-full h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'></div>
+      </div>
+    </div>
+    <button onclick='saveDeliveryTimer()' class='mt-3 h-9 px-4 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>Save Timer</button></div>`;
+  }
+
+  // ===== MESSAGES (NEW - Requirement 4) =====
+  else if(tab==='Messages'){
+    content=`<div class='grid gap-4'>
+      <div class='rounded-[18px] bg-[#111] border border-yellow-400/30 p-5'><div class='font-bold text-[13px]'>💬 Customizable Messaging System</div><div class='text-[11px] text-zinc-500 mt-1'>Auto-sent to customers when admin changes order status. Use {gb}, {network}, {id}, {phone} as placeholders.</div>
+      <div class='mt-3 grid gap-3'>
+        <div><div class='text-[11px] font-bold text-emerald-400'>✅ Payment Confirmed Message</div><textarea oninput='storeCfg.msg_confirmed=this.value' class='mt-1 w-full min-h-[60px] rounded-xl bg-black border border-white/10 p-3 text-[12px]'>${storeCfg.msg_confirmed||DEFAULT_STORE.msg_confirmed}</textarea></div>
+        <div><div class='text-[11px] font-bold text-blue-400'>📦 Delivered Order Message</div><textarea oninput='storeCfg.msg_delivered=this.value' class='mt-1 w-full min-h-[60px] rounded-xl bg-black border border-white/10 p-3 text-[12px]'>${storeCfg.msg_delivered||DEFAULT_STORE.msg_delivered}</textarea></div>
+        <div><div class='text-[11px] font-bold text-red-400'>❌ Failed Order Message</div><textarea oninput='storeCfg.msg_failed=this.value' class='mt-1 w-full min-h-[60px] rounded-xl bg-black border border-white/10 p-3 text-[12px]'>${storeCfg.msg_failed||DEFAULT_STORE.msg_failed}</textarea></div>
+      </div>
+      <button onclick='saveMessages()' class='mt-3 h-9 px-4 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>Save Message Templates</button></div>
+    </div>`;
+  }
+
+  // ===== ANNOUNCEMENTS (NEW - Requirement 5) =====
+  else if(tab==='Announcements'){
+    content=`<div class='grid gap-4'>
+      <div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>📢 Announcements</div><div class='text-[11px] text-zinc-500 mt-1'>Two types: Customer (shop banner) and Agent (agent dashboard). Toggle active/inactive. Multiple select status change on Orders tab.</div>
+      <div class='mt-3 flex gap-2'><button onclick='addAnnouncement("customers")' class='h-8 px-3 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>+ Customer Announcement</button><button onclick='addAnnouncement("agents")' class='h-8 px-3 rounded-full bg-blue-500 text-white font-bold text-[11px]'>+ Agent Announcement</button></div>
+      <div class='mt-4 grid gap-2'>${announcements.map((a,i)=>`
+        <div class='flex items-center gap-3 bg-black rounded-xl px-4 py-3 border border-white/10'>
+          <div class='flex-1'><div class='text-[11px] font-bold ${a.target==='customers'?'text-yellow-400':'text-blue-400'}'>${a.target==='customers'?'👤 Customers':'👤 Agents'}</div><div class='text-[11px] mt-1'>${a.message}</div></div>
+          <label class='flex items-center gap-1 text-[10px]'><input type='checkbox' ${a.active!==false?'checked':''} onchange='announcements[${i}].active=this.checked'> Active</label>
+          <button onclick='announcements.splice(${i},1);saveAnnouncements()' class='h-6 w-6 rounded-full bg-red-500/20 text-red-400 text-[10px]'>✕</button>
+        </div>`).join('')||'<div class="text-[11px] text-zinc-500 text-center py-4">No announcements yet</div>'}</div></div>
+      <button onclick='saveAnnouncements()' class='h-11 px-6 rounded-full bg-yellow-400 text-black font-bold text-[12px]'>Save Announcements</button>
+    </div>`;
+  }
+
+  // ===== ADVERTS (NEW - Requirement 8) =====
+  else if(tab==='Adverts'){
+    content=`<div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>🔥 Advertising Section (Shop)</div><div class='text-[11px] text-zinc-500 mt-1'>Promos, special offers shown on shop page. Controlled by admin.</div>
+    <div class='mt-3'><button onclick='addAdvert()' class='h-8 px-3 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>+ Add Advert</button></div>
+    <div class='mt-4 grid gap-2'>${adverts.map((a,i)=>`
+      <div class='bg-black rounded-xl px-4 py-3 border border-white/10'>
+        <div class='grid gap-2'>
+          <input value='${a.title||''}' oninput='adverts[${i}].title=this.value' placeholder='Title' class='h-9 rounded-lg bg-zinc-900 border border-white/10 px-3 text-[11px]'>
+          <textarea oninput='adverts[${i}].body=this.value' class='min-h-[40px] rounded-lg bg-zinc-900 border border-white/10 px-3 text-[11px]'>${a.body||''}</textarea>
+          <div class='flex gap-2'><input value='${a.cta||''}' oninput='adverts[${i}].cta=this.value' placeholder='Button Text' class='flex-1 h-9 rounded-lg bg-zinc-900 border border-white/10 px-3 text-[11px]'><input value='${a.cta_link||''}' oninput='adverts[${i}].cta_link=this.value' placeholder='Link URL' class='flex-1 h-9 rounded-lg bg-zinc-900 border border-white/10 px-3 text-[11px]'></div>
+          <label class='flex items-center gap-1 text-[10px]'><input type='checkbox' ${a.active!==false?'checked':''} onchange='adverts[${i}].active=this.checked'> Active</label>
+          <button onclick='adverts.splice(${i},1);saveAdverts()' class='h-7 px-2 rounded-full bg-red-500/20 text-red-400 text-[10px]'>Remove</button>
+        </div>
+      </div>`).join('')||'<div class="text-[11px] text-zinc-500 text-center py-4">No adverts yet</div>'}</div>
+    <button onclick='saveAdverts()' class='mt-3 h-9 px-4 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>Save Adverts</button></div>`;
+  }
+
+  // ===== GIFT CODES (NEW - Requirement 8) =====
+  else if(tab==='Gift Codes'){
+    content=`<div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>🎁 Gift / Referral Codes</div><div class='text-[11px] text-zinc-500 mt-1'>Admin generates codes. Customers claim via gift button on shop. Criteria: all, referral, first_purchase.</div>
+    <div class='mt-3'><button onclick='addGiftCode()' class='h-8 px-3 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>+ Generate Gift Code</button></div>
+    <div class='mt-4 grid gap-2'>${giftCodes.map((g,i)=>`
+      <div class='flex items-center gap-3 bg-black rounded-xl px-4 py-3 border border-white/10'>
+        <div class='flex-1'>
+          <div class='text-[11px] font-bold'>${g.code} - ${g.value||'1GB'}</div>
+          <div class='text-[10px] text-zinc-400'>${g.type||'Free Data'} | Criteria: ${g.criteria||'all'} | ${g.claimed?'Claimed by '+g.claimedBy:'✅ Available'}</div>
+          <div class='text-[10px] text-zinc-500'>${g.description||''}</div>
+        </div>
+        <button onclick='giftCodes.splice(${i},1);saveGiftCodes()' class='h-6 w-6 rounded-full bg-red-500/20 text-red-400 text-[10px]'>✕</button>
+      </div>`).join('')||'<div class="text-[11px] text-zinc-500 text-center py-4">No gift codes yet</div>'}</div>
+    <button onclick='saveGiftCodes()' class='mt-3 h-9 px-4 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>Save Gift Codes</button></div>`;
+  }
+
+  // ===== REFERRALS (NEW - Requirement 8) =====
+  else if(tab==='Referrals'){
+    content=`<div class='grid gap-4'>
+      <div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>🔗 Customer & Agent Referral System</div><div class='text-[11px] text-zinc-500 mt-1'>Each customer gets a referral code on registration. Agents have their own codes. Gift codes + referrals work together.</div>
+      <div class='mt-3 grid md:grid-cols-2 gap-3'>
+        <div class='rounded-xl bg-black border border-white/10 p-4'><div class='text-[10px] text-zinc-500 uppercase font-bold'>Customer Codes</div><div class='mt-2 space-y-1 max-h-[200px] overflow-auto'>${customers.map(c=>`<div class='text-[11px] flex justify-between bg-zinc-900 rounded-lg px-3 py-1'><span>${c.name} (${c.phone})</span><span class='text-yellow-400 font-bold'>${c.referralCode||'N/A'}</span></div>`).join('')||'<div class="text-[10px] text-zinc-500">No customers yet</div>'}</div></div>
+        <div class='rounded-xl bg-black border border-white/10 p-4'><div class='text-[10px] text-zinc-500 uppercase font-bold'>Agent Codes</div><div class='mt-2 space-y-1 max-h-[200px] overflow-auto'>${agents.map(a=>`<div class='text-[11px] flex justify-between bg-zinc-900 rounded-lg px-3 py-1'><span>${a.code} - ${a.name}</span><span class='text-yellow-400 font-bold'>${a.commission||10}% GH¢${a.earnings||0}</span></div>`).join('')||'<div class="text-[10px] text-zinc-500">No agents yet</div>'}</div></div>
+      </div></div>
+    </div>`;
+  }
+
+  // ===== SERVICE PROVIDERS (NEW - Requirement 13) =====
+  else if(tab==='Service Providers'){
+    content=`<div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>🔌 Service Providers</div><div class='text-[11px] text-zinc-500 mt-1'>Hubtel, AllNet, Arkesel etc. for instant airtime crediting (Paystack/redirect orders only, manual orders are manual).</div>
+    <div class='mt-3'><button onclick='addServiceProvider()' class='h-8 px-3 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>+ Add Provider</button></div>
+    <div class='mt-4 grid gap-2'>${serviceProviders.map((sp,i)=>`
+      <div class='bg-black rounded-xl px-4 py-3 border border-white/10'>
+        <div class='grid gap-2'>
+          <div class='flex gap-2'><input value='${sp.name||''}' oninput='serviceProviders[${i}].name=this.value' placeholder='Provider Name' class='flex-1 h-9 rounded-lg bg-zinc-900 border border-white/10 px-3 text-[11px]'><input value='${sp.api_url||''}' oninput='serviceProviders[${i}].api_url=this.value' placeholder='API URL' class='flex-1 h-9 rounded-lg bg-zinc-900 border border-white/10 px-3 text-[11px]'></div>
+          <input value='${sp.api_key||''}' oninput='serviceProviders[${i}].api_key=this.value' type='password' placeholder='API Key' class='w-full h-9 rounded-lg bg-zinc-900 border border-white/10 px-3 text-[11px]'>
+          <div class='flex gap-2 items-center'><label class='text-[10px] flex items-center gap-1'><input type='checkbox' ${sp.active?'checked':''} onchange='serviceProviders[${i}].active=this.checked'> Active</label><label class='text-[10px] flex items-center gap-1'><input type='checkbox' ${sp.for_airtime?'checked':''} onchange='serviceProviders[${i}].for_airtime=this.checked'> For Airtime</label><button onclick='serviceProviders.splice(${i},1);saveServiceProviders()' class='h-6 px-2 rounded-full bg-red-500/20 text-red-400 text-[10px]'>Remove</button></div>
+        </div>
+      </div>`).join('')||'<div class="text-[11px] text-zinc-500 text-center py-4">No providers configured</div>'}</div>
+    <button onclick='saveServiceProviders()' class='mt-3 h-9 px-4 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>Save Providers</button></div>`;
+  }
+
+  // ===== SETTINGS (preserved from original Checkers & Settings - all features kept) =====
+  else if(tab==='Settings'){
+    content=`<div class='grid gap-4'>
+      <div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>Delivery Note (empty = hidden, no Instant Delivery)</div><textarea oninput='storeCfg.delivery_note=this.value' class='mt-2 w-full min-h-[70px] rounded-xl bg-black border border-white/10 p-3 text-[13px]'>${storeCfg.delivery_note||''}</textarea></div>
+      <div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>AFA Mode</div><div class='mt-2 grid md:grid-cols-2 gap-3'><label class='rounded-xl p-3 border cursor-pointer ${storeCfg.afa.mode==='manual'?'bg-yellow-400/10 border-yellow-400/30':'bg-black border-white/10'} flex gap-2'><input type='radio' ${storeCfg.afa.mode==='manual'?'checked':''} onchange='storeCfg.afa.mode="manual";render()'><div class='flex-1'><div class='font-bold text-[11px]'>Manual MoMo</div><input value='${storeCfg.afa.momo_number}' oninput='storeCfg.afa.momo_number=this.value' class='mt-1 w-full h-7 rounded-lg bg-black border border-white/10 px-2 text-[11px]'><input value='${storeCfg.afa.momo_name}' oninput='storeCfg.afa.momo_name=this.value' class='mt-1 w-full h-7 rounded-lg bg-black border border-white/10 px-2 text-[11px]'></div></label><label class='rounded-xl p-3 border cursor-pointer ${storeCfg.afa.mode==='paystack'?'bg-yellow-400/10 border-yellow-400/30':'bg-black border-white/10'} flex gap-2'><input type='radio' ${storeCfg.afa.mode==='paystack'?'checked':''} onchange='storeCfg.afa.mode="paystack";render()'><div class='flex-1'><div class='font-bold text-[11px]'>Own Paystack</div><input value='${storeCfg.afa.my_paystack_link}' oninput='storeCfg.afa.my_paystack_link=this.value' class='mt-1 w-full h-7 rounded-lg bg-black border border-white/10 px-2 text-[11px]'></div></label></div></div>
+      <div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>SMS Notifications (Ghana - Hubtel / mNotify)</div><div class='text-[11px] text-zinc-500 mt-1'>Enable to auto-send SMS on wallet load, pay, transactions, order status changes. Leave disabled to just log.</div><div class='mt-3 grid gap-2'><label class='flex items-center gap-2 text-[12px]'><input type='checkbox' ${storeCfg.sms.enabled?'checked':''} onchange='storeCfg.sms.enabled=this.checked'> Enable SMS</label><div class='grid md:grid-cols-3 gap-2'><input value='${storeCfg.sms.provider}' oninput='storeCfg.sms.provider=this.value' placeholder='provider hubtel/mnotify' class='h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'><input value='${storeCfg.sms.sender}' oninput='storeCfg.sms.sender=this.value' placeholder='Sender ID RaajData' class='h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'><input value='${storeCfg.sms.api_key}' oninput='storeCfg.sms.api_key=this.value' type='password' placeholder='API Key' class='h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'></div><div class='text-[10px] text-zinc-500'>For production, put SMS in Supabase Edge Function to hide key. Hubtel: https://sms.hubtel.com/v1/messages/send</div></div></div>
+      <div class='rounded-[18px] bg-[#111] border border-yellow-400/30 p-5'><div class='font-bold text-[13px]'>🔐 Change Admin Password</div><div class='text-[11px] text-zinc-500 mt-1'>Current username: <span class='text-yellow-400 font-bold'>${adminCreds.u}</span></div><div class='mt-3 grid md:grid-cols-3 gap-2'><input id='newAdminU' value='${adminCreds.u}' placeholder='Username' class='h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'><input id='newAdminP' type='password' placeholder='New Password' class='h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'><input id='confirmAdminP' type='password' placeholder='Confirm' class='h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'></div><div class='mt-3 flex gap-2'><button onclick='changeAdminPassword()' class='h-9 px-4 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>Change Password</button><button onclick='resetAdminToDefault()' class='h-9 px-4 rounded-full bg-white/10 text-white font-bold text-[11px]'>Reset Default</button></div></div>
+      <div class='rounded-[18px] bg-[#111] border border-white/10 p-5'><div class='font-bold text-[13px]'>Supabase</div><div class='mt-2 grid md:grid-cols-2 gap-2'><input value='${supaCfg.url}' oninput='supaCfg.url=this.value' class='h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'><input value='${supaCfg.anonKey}' oninput='supaCfg.anonKey=this.value' placeholder='eyJhbG...' class='h-9 rounded-xl bg-black border border-white/10 px-3 text-[11px]'></div><button onclick='localStorage.setItem("raaj_supabase_config",JSON.stringify(supaCfg));showToast("Supabase saved","success")' class='mt-2 h-8 px-3 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>Save Supabase</button></div>
+      <button onclick='saveCheckers()' class='h-11 px-6 rounded-full bg-yellow-400 text-black font-bold text-[12px]'>Save All Settings</button>
+    </div>`;
+  }
+
+  app.innerHTML=`<header class='sticky top-0 z-10 bg-black/90 backdrop-blur border-b border-white/10'><div class='mx-auto max-w-[1200px] px-4 h-[56px] flex items-center justify-between'><div class='font-syne font-extrabold'><span class='text-yellow-400'>RAAJ</span> Admin V4</div><div class='flex items-center gap-2'><span class='text-[10px] bg-yellow-400 text-black px-2 py-1 rounded-full font-bold'>${storeCfg.bundles.mode.toUpperCase()}</span>${overdueCount>0?'<span class="text-[10px] bg-red-500 text-white px-2 py-1 rounded-full font-bold overdue-flash">⚠️ '+overdueCount+' OVERDUE</span>':''}<button onclick='localStorage.removeItem("raaj_admin_session");location.reload()' class='text-[11px] text-zinc-500'>Logout</button></div></div></header><div class='mx-auto max-w-[1200px] px-4 py-4'><div class='rounded-xl bg-yellow-400 text-black px-4 py-2 text-[11px] font-bold mb-3'>${liveBadge}</div><div class='flex gap-2 overflow-x-auto pb-2 flex-wrap'>${tabs}</div><div class='mt-4'>${content}</div></div>`;
 }
-function login(){ const u=document.getElementById('u').value; const p=document.getElementById('p').value; if(u==='admin' && p==='raaj2024'){ localStorage.setItem('raaj_admin_session', JSON.stringify({logged:true})); session=true; render(); } else alert('Invalid'); }
-window.onload=load; window.login=login; window.render=render; window.saveStore=saveStore; window.saveBundles=saveBundles; window.saveCheckers=saveCheckers;
+
+/* --- AUTH (preserved from original, no password hints) --- */
+function login(){const u=document.getElementById('u').value;const p=document.getElementById('p').value;if(u===adminCreds.u&&p===adminCreds.p){localStorage.setItem('raaj_admin_session',JSON.stringify({logged:true}));session=true;render()}else alert('Invalid credentials')}
+function changeAdminPassword(){const newU=document.getElementById('newAdminU').value||adminCreds.u;const newP=document.getElementById('newAdminP').value;const confirmP=document.getElementById('confirmAdminP').value;if(!newP||newP.length<4){alert('Password min 4 chars');return}if(newP!==confirmP){alert('Passwords dont match');return}adminCreds={u:newU,p:newP};localStorage.setItem('raaj_admin_creds',JSON.stringify(adminCreds));showToast('Admin password changed!','success');render()}
+function resetAdminToDefault(){if(!confirm('Reset admin to default admin / raaj2024?'))return;adminCreds={u:'admin',p:'raaj2024'};localStorage.setItem('raaj_admin_creds',JSON.stringify(adminCreds));showToast('Reset to admin / raaj2024','success');render()}
+
+window.onload=load;window.login=login;window.render=render;window.saveStore=saveStore;window.saveBundles=saveBundles;window.saveCheckers=saveCheckers;
+window.changeOrderStatus=changeOrderStatus;window.changeMultipleOrderStatus=changeMultipleOrderStatus;
+window.changeAdminPassword=changeAdminPassword;window.resetAdminToDefault=resetAdminToDefault;
+window.syncFromSupabaseCloud=syncFromSupabaseCloud;
 </script>
 </body>
 </html>
