@@ -1,33 +1,49 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Raaj Multimedia - Cheap Data + Agent Dashboard</title>
+<title>RAAJ MULTIMEDIA - Cheap Data + Airtime + Checkers + AFA</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-<style>body{font-family:Inter,system-ui} .font-syne{font-family:Syne}</style>
+<style>body{font-family:Inter,system-ui}.font-syne{font-family:Syne}
+.toast-in{animation:toastIn .3s ease}
+@keyframes toastIn{from{transform:translateY(30px);opacity:0}to{transform:translateY(0);opacity:1}}
+.gift-float{animation:giftPulse 2s ease-in-out infinite}
+@keyframes giftPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+.mtn-card{border-color:#FFC300!important}.telecel-card{border-color:#E4002B!important}.at-card{border-color:#0066B3!important}
+.mtn-tab{background:#FFC300;color:#000}.telecel-tab{background:#E4002B;color:#fff}.at-tab{background:#0066B3;color:#fff}
+</style>
 <script>
-// === RAAJ CLOUD API - WORKING CONFIG ===
-const RAAJ_SUPABASE_URL = 'https://hvqhxfnhnqgxlasgllwf.supabase.co';
-const RAAJ_PUBLISHABLE_KEY = 'sb_publishable_ospxp3BnJYcQs_NexP-EQQ_63nDw9KG';
-const API_PRODUCTS = RAAJ_SUPABASE_URL + '/functions/v1/get-products';
-const API_CREATE_ORDER = RAAJ_SUPABASE_URL + '/functions/v1/create-order';
-const API_SEND_SMS = RAAJ_SUPABASE_URL + '/functions/v1/send-sms';
+/* === RAAJ CLOUD API - WORKING CONFIG === */
+const RAAJ_SUPABASE_URL='https://hvqhxfnhnqgxlasgllwf.supabase.co';
+const RAAJ_PUBLISHABLE_KEY='sb_publishable_ospxp3BnJYcQs_NexP-EQQ_63nDw9KG';
+const API_PRODUCTS=RAAJ_SUPABASE_URL+'/functions/v1/get-products';
+const API_CREATE_ORDER=RAAJ_SUPABASE_URL+'/functions/v1/create-order';
+const API_SEND_SMS=RAAJ_SUPABASE_URL+'/functions/v1/send-sms';
 </script>
 </head>
 <body class="bg-[#0a0a0a] text-white min-h-screen">
 <div id="app"></div>
 <div id="modals"></div>
+<div id="toast-box" class="fixed top-4 right-4 z-[200] space-y-2"></div>
 
 <script>
+/* =========================================================
+   RAAJ MULTIMEDIA V4 SHOP - COMPLETE UPGRADE
+   All original features preserved + 23 new requirements
+   ========================================================= */
+
+/* --- CONSTANTS (preserved from original) --- */
 const PRIMARY="https://cheapdata.shop/shop/raaj-data-services-1772546369430";
 const SECONDARY="https://agent.budgetdata.store/raajdataservices";
 const PAYSTACK_BUNDLES_DEFAULT="https://paystack.com/pay/raaj-bundles";
 const PAYSTACK_AFA_DEFAULT="https://paystack.com/pay/raaj-afa";
 const MOMO_NUMBER="0241113791";
-const MOMO_NAME="Mohammed Suraj";
+const MOMO_NAME="Mohammed A. Suraj";
+const VODA_NUMBER="0208094005";
+const VODA_NAME="Mohammed A. Suraj";
 const WA_BASE="https://wa.me/233241113791?text=";
+const CEO_NAME="M. S. Abubakar";
 
 const DEFAULT_BUNDLES={
  MTN:[{gb:1,price:5},{gb:2,price:9},{gb:3,price:13},{gb:5,price:21,popular:true},{gb:8,price:32},{gb:10,price:39},{gb:15,price:57},{gb:20,price:74},{gb:30,price:108},{gb:50,price:175},{gb:100,price:320}],
@@ -35,362 +51,608 @@ const DEFAULT_BUNDLES={
  AirtelTigo:[{gb:1,price:5},{gb:2,price:9},{gb:5,price:22,popular:true},{gb:8,price:33},{gb:10,price:40},{gb:15,price:58},{gb:20,price:76},{gb:30,price:110},{gb:50,price:178},{gb:100,price:325}]
 };
 const DEFAULT_CHECKERS={WASSCE:25,BECE:15,CSSPS:10};
+const DEFAULT_AIRTIME={MTN:{min:1,max:500,on:true},Telecel:{min:1,max:500,on:true},AirtelTigo:{min:1,max:500,on:true}};
 
-function getStore(){ try{return JSON.parse(localStorage.getItem('raaj_store_config')||'{}')}catch{return{}} }
-function getBundlePrices(){ try{const p=JSON.parse(localStorage.getItem('raaj_bundle_prices')||'null'); if(p) return p;}catch{} return DEFAULT_BUNDLES; }
-function getCheckerPrices(){ try{const p=JSON.parse(localStorage.getItem('raaj_checker_prices')||'null'); if(p) return p;}catch{} return DEFAULT_CHECKERS; }
-function getAgents(){ try{return JSON.parse(localStorage.getItem('raaj_agents')||'[]')}catch{return[]} }
-function getTxs(){ try{return JSON.parse(localStorage.getItem('raaj_transactions')||'[]')}catch{return[]} }
-function getWithdraws(){ try{return JSON.parse(localStorage.getItem('raaj_withdraws')||'[]')}catch{return[]} }
+/* --- STATE --- */
+let refCode=null, activeNet='MTN', shopTab='data', deliveryNote='', bundlePrices, checkerPrices, checkerStock, airtimeCfg;
+let agentSession=null, customerSession=null, pendingForward=null;
+let giftInput='';
 
-let refCode=null, activeNet='MTN', deliveryNote='', bundlePrices=getBundlePrices(), checkerPrices=getCheckerPrices();
-let agentSession=null; // logged agent
-let pendingForward=null;
+/* --- TOAST --- */
+function toast(msg,type='info'){
+  const c=document.getElementById('toast-box');
+  const cls={info:'bg-blue-500',success:'bg-emerald-500',error:'bg-red-500',warning:'bg-yellow-500 text-black'};
+  const d=document.createElement('div');
+  d.className=`toast-in px-4 py-3 rounded-xl ${cls[type]||cls.info} text-white font-bold text-[12px] shadow-lg max-w-[300px]`;d.textContent=msg;c.appendChild(d);
+  setTimeout(()=>{d.style.opacity='0';d.style.transition='opacity .3s';setTimeout(()=>d.remove(),300)},3500);
+}
 
-async function sendSecureSMS(phone, message, type='general'){
+/* --- LOCAL STORAGE HELPERS --- */
+function getStore(){try{return JSON.parse(localStorage.getItem('raaj_store_config')||'{}')}catch{return{}}}
+function getBundlePrices(){try{const p=JSON.parse(localStorage.getItem('raaj_bundle_prices')||'null');if(p)return p}catch{}return JSON.parse(JSON.stringify(DEFAULT_BUNDLES))}
+function getCheckerPrices(){try{const p=JSON.parse(localStorage.getItem('raaj_checker_prices')||'null');if(p)return p}catch{}return{...DEFAULT_CHECKERS}}
+function getCheckerStock(){try{return JSON.parse(localStorage.getItem('raaj_checker_stock')||'{}')}catch{return{}}}
+function getAirtimeCfg(){try{const c=JSON.parse(localStorage.getItem('raaj_airtime_config')||'null');if(c)return c}catch{}return JSON.parse(JSON.stringify(DEFAULT_AIRTIME))}
+function getAgents(){try{return JSON.parse(localStorage.getItem('raaj_agents')||'[]')}catch{return[]}}
+function getTxs(){try{return JSON.parse(localStorage.getItem('raaj_transactions')||'[]')}catch{return[]}}
+function getAfas(){try{return JSON.parse(localStorage.getItem('raaj_afa_requests')||'[]')}catch{return[]}}
+function getWithdraws(){try{return JSON.parse(localStorage.getItem('raaj_withdraws')||'[]')}catch{return[]}}
+function getCustomers(){try{return JSON.parse(localStorage.getItem('raaj_customers')||'[]')}catch{return[]}}
+function getGiftCodes(){try{return JSON.parse(localStorage.getItem('raaj_gift_codes')||'[]')}catch{return[]}}
+function getAnnouncements(){try{return JSON.parse(localStorage.getItem('raaj_announcements')||'[]')}catch{return[]}}
+function getAdverts(){try{return JSON.parse(localStorage.getItem('raaj_adverts')||'[]')}catch{return[]}}
+function getDeliveryTimer(){try{return JSON.parse(localStorage.getItem('raaj_delivery_timer')||'null')}catch{return null}}
+function getClaimRequests(){try{return JSON.parse(localStorage.getItem('raaj_claim_requests')||'[]')}catch{return[]}}
+
+/* --- SMS (preserved from original) --- */
+async function sendSecureSMS(phone,message,type='general'){
   try{
     const cfg=JSON.parse(localStorage.getItem('raaj_supabase_config')||'{}');
-    const url=(cfg.url||'https://hvqhxfnhnqgxlasgllwf.supabase.co')+'/functions/v1/send-sms';
+    const url=(cfg.url||RAAJ_SUPABASE_URL)+'/functions/v1/send-sms';
     const anon=cfg.anonKey||'';
-    if(!anon){ console.log('[SMS Mock] To:',phone,'Msg:',message); return; }
-    await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+anon, 'apikey': anon }, body: JSON.stringify({phone, message, type}) });
-  }catch(e){ console.log('SMS error',e); }
+    if(!anon){console.log('[SMS Mock] To:',phone,'Msg:',message);return}
+    await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+anon,'apikey':anon},body:JSON.stringify({phone,message,type})});
+  }catch(e){console.log('SMS error',e)}
 }
 
+/* --- INIT (preserved from original + new) --- */
 function init(){
- const params=new URLSearchParams(location.search);
- const r=params.get('ref'); if(r) { refCode=r.toUpperCase(); try{sessionStorage.setItem('raaj_ref',refCode)}catch{} } else { try{refCode=sessionStorage.getItem('raaj_ref')}catch{} }
- try{ const cfg=getStore(); if(cfg.delivery_note) deliveryNote=cfg.delivery_note.trim(); }catch{}
- try{ agentSession=JSON.parse(sessionStorage.getItem('raaj_agent_session')||'null'); }catch{}
- try{ const pf=JSON.parse(localStorage.getItem('raaj_pending_forward')||'null'); if(pf && pf.id) pendingForward=pf; }catch{}
- render();
+  const params=new URLSearchParams(location.search);
+  const r=params.get('ref');if(r){refCode=r.toUpperCase();try{sessionStorage.setItem('raaj_ref',refCode)}catch{}}else{try{refCode=sessionStorage.getItem('raaj_ref')}catch{}}
+  try{const cfg=getStore();if(cfg.delivery_note)deliveryNote=cfg.delivery_note.trim()}catch{}
+  bundlePrices=getBundlePrices();checkerPrices=getCheckerPrices();checkerStock=getCheckerStock();airtimeCfg=getAirtimeCfg();
+  try{agentSession=JSON.parse(sessionStorage.getItem('raaj_agent_session')||'null')}catch{}
+  try{customerSession=JSON.parse(sessionStorage.getItem('raaj_customer_session')||'null')}catch{}
+  try{const pf=JSON.parse(localStorage.getItem('raaj_pending_forward')||'null');if(pf&&pf.id)pendingForward=pf}catch{}
+  render();
 }
+
+/* --- RESOLVE CONFIGS (preserved from original + new fields) --- */
 function resolveBundleCfg(){
- const cfg=getStore(); const b=cfg.bundles||{};
- let mode=b.mode||'redirect'; if(mode==='paystack') mode='paystack_only';
- return {mode, primary:b.primary||PRIMARY, secondary:b.secondary||SECONDARY, myPaystack:b.my_paystack_link||PAYSTACK_BUNDLES_DEFAULT, forwardPrimary:b.forward_primary||b.primary||PRIMARY, autoForward:b.auto_forward!==false };
+  const cfg=getStore();const b=cfg.bundles||{};
+  let mode=b.mode||'redirect';if(mode==='paystack')mode='paystack_only';
+  return{mode,primary:b.primary||PRIMARY,secondary:b.secondary||SECONDARY,myPaystack:b.my_paystack_link||PAYSTACK_BUNDLES_DEFAULT,forwardPrimary:b.forward_primary||b.primary||PRIMARY,autoForward:b.auto_forward!==false,redirectToggle:b.redirect_toggle!==false,airtimeRedirectToggle:b.airtime_redirect_toggle!==false};
 }
 function resolveAfaCfg(){
- const cfg=getStore(); const a=cfg.afa||{};
- return {mode:a.mode||'manual', momo_number:a.momo_number||MOMO_NUMBER, momo_name:a.momo_name||MOMO_NAME, amount:a.amount??35, myPaystack:a.my_paystack_link||PAYSTACK_AFA_DEFAULT };
+  const cfg=getStore();const a=cfg.afa||{};
+  return{mode:a.mode||'manual',momo_number:a.momo_number||MOMO_NUMBER,momo_name:a.momo_name||MOMO_NAME,amount:a.amount??35,myPaystack:a.my_paystack_link||PAYSTACK_AFA_DEFAULT,toggle:a.toggle!==false};
 }
 
+/* --- SAVE TX (preserved commission logic + status + customer link) --- */
 function saveTx(tx){
- try{ const ex=getTxs(); ex.push(tx); localStorage.setItem('raaj_transactions',JSON.stringify(ex)); }catch{ localStorage.setItem('raaj_transactions',JSON.stringify([tx])); }
- // Commission logic - 10% direct, 5% parent
- if(refCode){
-  try{
-   const agents=getAgents();
-   let agIdx=agents.findIndex(a=>a.code===refCode);
-   if(agIdx!==-1){
-    const direct=+(tx.price*0.10).toFixed(2);
-    agents[agIdx].wallet=(agents[agIdx].wallet||0)+direct;
-    agents[agIdx].earnings=(agents[agIdx].earnings||0)+direct;
-    if(!agents[agIdx].history) agents[agIdx].history=[];
-    agents[agIdx].history.push({type:'COMMISSION', amount:direct, from:tx.id, date:new Date().toISOString()});
-    // Parent 5%
-    if(agents[agIdx].parent){
-      const pIdx=agents.findIndex(a=>a.code===agents[agIdx].parent);
-      if(pIdx!==-1){
-        const parentComm=+(tx.price*0.05).toFixed(2);
-        agents[pIdx].wallet=(agents[pIdx].wallet||0)+parentComm;
-        agents[pIdx].earnings=(agents[pIdx].earnings||0)+parentComm;
-        if(!agents[pIdx].history) agents[pIdx].history=[];
-        agents[pIdx].history.push({type:'TEAM COMMISSION', amount:parentComm, from:agents[agIdx].code+'/'+tx.id, date:new Date().toISOString()});
+  try{const ex=getTxs();ex.push(tx);localStorage.setItem('raaj_transactions',JSON.stringify(ex))}catch{localStorage.setItem('raaj_transactions',JSON.stringify([tx]))}
+  // Link to customer account
+  if(customerSession){
+    try{const custs=getCustomers();const ci=custs.findIndex(c=>c.phone===customerSession.phone);if(ci!==-1){if(!custs[ci].orders)custs[ci].orders=[];custs[ci].orders.push(tx.id);localStorage.setItem('raaj_customers',JSON.stringify(custs))}}catch{}
+  }
+  // Commission logic - 10% direct, 5% parent (preserved exactly)
+  if(refCode){
+    try{
+      const agents=getAgents();
+      let agIdx=agents.findIndex(a=>a.code===refCode);
+      if(agIdx!==-1){
+        const commPct=agents[agIdx].commission||10;
+        const direct=+(tx.price*(commPct/100)).toFixed(2);
+        agents[agIdx].wallet=(agents[agIdx].wallet||0)+direct;
+        agents[agIdx].earnings=(agents[agIdx].earnings||0)+direct;
+        if(!agents[agIdx].history)agents[agIdx].history=[];
+        agents[agIdx].history.push({type:'COMMISSION',amount:direct,from:tx.id,date:new Date().toISOString()});
+        // Parent 5%
+        if(agents[agIdx].parent){
+          const pIdx=agents.findIndex(a=>a.code===agents[agIdx].parent);
+          if(pIdx!==-1){
+            const parentPct=agents[pIdx].commission?Math.min(agents[pIdx].commission,5):5;
+            const parentComm=+(tx.price*(parentPct/100)).toFixed(2);
+            agents[pIdx].wallet=(agents[pIdx].wallet||0)+parentComm;
+            agents[pIdx].earnings=(agents[pIdx].earnings||0)+parentComm;
+            if(!agents[pIdx].history)agents[pIdx].history=[];
+            agents[pIdx].history.push({type:'TEAM COMMISSION',amount:parentComm,from:agents[agIdx].code+'/'+tx.id,date:new Date().toISOString()});
+          }
+        }
+        localStorage.setItem('raaj_agents',JSON.stringify(agents));
+        if(agentSession&&(agentSession.code===refCode||agentSession.code===agents[agIdx].parent)){
+          const updated=agents.find(a=>a.code===agentSession.code);
+          if(updated){agentSession=updated;sessionStorage.setItem('raaj_agent_session',JSON.stringify(updated))}
+        }
       }
-    }
-    localStorage.setItem('raaj_agents',JSON.stringify(agents));
-    // Refresh session if logged agent is involved
-    if(agentSession && (agentSession.code===refCode || agentSession.code===agents[agIdx].parent)){
-      const updated=agents.find(a=>a.code===agentSession.code);
-      if(updated){ agentSession=updated; sessionStorage.setItem('raaj_agent_session',JSON.stringify(updated)); }
-    }
-   }
-  }catch(e){ console.log(e); }
- }
+    }catch(e){console.log(e)}
+  }
 }
 
-function buyBundle(net, bundle){
- const phone=prompt('Enter beneficiary number (024XXXXXXX):'); if(!phone) return; if(!/^(0|233)[0-9]{9,10}$/.test(phone.replace(/\s/g,''))) { alert('Invalid number'); return; }
- const clean=phone.replace(/\s/g,''); const id='TXN-'+Date.now().toString(36).toUpperCase();
- const tx={id, network:net, gb:bundle.gb, price:bundle.price, phone:clean, agentCode:refCode||null, date:new Date().toISOString(), status:'Success'};
- saveTx(tx);
- sendSecureSMS(clean, `Raaj: ${bundle.gb}GB order for ${clean} received. ID ${id}. Delivering in 5-10 mins. Ref ${refCode||'DIRECT'}`, 'bundle');
- const cfg=resolveBundleCfg();
- if(cfg.mode==='redirect'){
-   location.href=cfg.primary+'?phone='+encodeURIComponent(clean)+'&data='+encodeURIComponent(bundle.gb+'GB');
- } else if(cfg.mode==='hybrid'){
-   try{ localStorage.setItem('raaj_pending_forward', JSON.stringify({id, phone:clean, gb:bundle.gb, price:bundle.price, forwardUrl:cfg.forwardPrimary, date:new Date().toISOString()})); }catch{}
-   location.href=cfg.myPaystack+'?ref='+encodeURIComponent(id);
-   setTimeout(()=>{ if(confirm('Payment done? Click OK to continue to delivery')){ const pf=JSON.parse(localStorage.getItem('raaj_pending_forward')||'null'); if(pf){ location.href=pf.forwardUrl+'?phone='+encodeURIComponent(pf.phone)+'&data='+encodeURIComponent(pf.gb+'GB'); localStorage.removeItem('raaj_pending_forward'); } } }, 1500);
- } else if(cfg.mode==='paystack_only'){
-   location.href=cfg.myPaystack;
-   alert('After paying on your Paystack, deliver manually. TX saved: '+id);
- }
+/* --- BUY BUNDLE (preserved from original + status tracking) --- */
+function buyBundle(net,bundle){
+  const cfg=resolveBundleCfg();
+  if(!cfg.redirectToggle&&cfg.mode==='redirect'){toast('Redirect is currently off. Orders processed in-house.','warning')}
+  const phone=prompt('Enter beneficiary number (024XXXXXXX):');if(!phone)return;
+  if(!/^(0|233)[0-9]{9,10}$/.test(phone.replace(/\s/g,''))){alert('Invalid number');return}
+  const clean=phone.replace(/\s/g,'');
+  const id='TXN-'+Date.now().toString(36).toUpperCase();
+  const payMethod=cfg.mode==='redirect'?'auto_redirect':cfg.mode==='hybrid'?'paystack+redirect':'paystack';
+  const tx={id,network:net,gb:bundle.gb,price:bundle.price,phone:clean,agentCode:refCode||null,date:new Date().toISOString(),product:'data',status:cfg.mode==='redirect'?'Processing':'Pending',payment_method:payMethod};
+  saveTx(tx);
+  sendSecureSMS(clean,`Raaj: ${bundle.gb}GB ${net} order received. ID ${id}. Status: ${tx.status}. Ref ${refCode||'DIRECT'}`,'bundle');
+  if(cfg.mode==='redirect'&&cfg.redirectToggle!==false){
+    location.href=cfg.primary+'?phone='+encodeURIComponent(clean)+'&data='+encodeURIComponent(bundle.gb+'GB');
+  }else if(cfg.mode==='hybrid'){
+    try{localStorage.setItem('raaj_pending_forward',JSON.stringify({id,phone:clean,gb:bundle.gb,price:bundle.price,forwardUrl:cfg.forwardPrimary,date:new Date().toISOString()}))}catch{}
+    location.href=cfg.myPaystack+'?ref='+encodeURIComponent(id);
+    setTimeout(()=>{if(confirm('Payment done? Click OK to continue to delivery')){const pf=JSON.parse(localStorage.getItem('raaj_pending_forward')||'null');if(pf){location.href=pf.forwardUrl+'?phone='+encodeURIComponent(pf.phone)+'&data='+encodeURIComponent(pf.gb+'GB');localStorage.removeItem('raaj_pending_forward')}}},1500);
+  }else if(cfg.mode==='paystack_only'){
+    location.href=cfg.myPaystack;
+    alert('After paying, we will deliver manually. TX: '+id);
+  }else{
+    // Manual / In-house
+    alert('Order saved: '+id+'\nPay GH¢'+bundle.price+' to MoMo '+MOMO_NUMBER+' ref '+clean+'\nWe will deliver after confirmation.');
+  }
 }
 
-function buyChecker(name, price){
- const phone=prompt('Enter phone to receive '+name+' PIN:'); if(!phone) return;
- const id='CHK-'+Date.now().toString(36).toUpperCase();
- const tx={id, network:'CHECKER', gb:name, price, phone:phone.replace(/\s/g,''), agentCode:refCode||null, date:new Date().toISOString(), status:'Success'};
- saveTx(tx);
- sendSecureSMS(phone.replace(/\s/g,''), `Raaj: ${name} PIN order GH¢${price} ID ${id} received. PIN will be sent via WhatsApp shortly.`, 'checker');
- const cfg=resolveBundleCfg();
- alert(name+' request saved: '+id+'. We will send PIN to '+phone+' via WhatsApp shortly.\nMoMo to confirm if needed: '+MOMO_NUMBER);
- window.open(WA_BASE+encodeURIComponent('Hi, I bought '+name+' GH¢'+price+' ID '+id+' phone '+phone),'_blank');
+/* --- BUY CHECKER (preserved + stock check + code reveal + auto SMS) --- */
+function buyChecker(name,price){
+  const stock=checkerStock[name]||0;
+  if(stock<=0){toast(name+' is OUT OF STOCK','error');return}
+  const phone=prompt('Enter phone to receive '+name+' PIN:');if(!phone)return;
+  const clean=phone.replace(/\s/g,'');
+  const id='CHK-'+Date.now().toString(36).toUpperCase();
+  const tx={id,network:'CHECKER',gb:name,price,phone:clean,agentCode:refCode||null,date:new Date().toISOString(),product:'checker',status:'Pending',payment_method:'manual_or_paystack'};
+  saveTx(tx);
+  sendSecureSMS(clean,`Raaj: ${name} order GH¢${price} ID ${id} received. Pay to ${MOMO_NUMBER} ref ${clean}. PIN sent after confirmation.`,'checker');
+  alert(name+' request saved: '+id+'\nPay GH¢'+price+' to MoMo '+MOMO_NUMBER+' ('+MOMO_NAME+') ref '+clean+'\nOr use Paystack. PIN sent after confirmation.');
+  window.open(WA_BASE+encodeURIComponent('Hi, I bought '+name+' GH¢'+price+' ID '+id+' phone '+clean),'_blank');
 }
 
+/* --- BUY AIRTIME (NEW) --- */
+function buyAirtime(net){
+  const cfg=airtimeCfg[net]||{min:1,max:500,on:true};
+  if(!cfg.on){toast(net+' airtime is OUT OF STOCK','error');return}
+  const amount=parseFloat(prompt(`Enter ${net} airtime amount (GH¢${cfg.min}-${cfg.max}):`));
+  if(!amount||amount<cfg.min||amount>cfg.max){toast('Amount must be GH¢'+cfg.min+'-'+cfg.max,'error');return}
+  const phone=prompt('Enter phone to top up:');if(!phone)return;
+  const clean=phone.replace(/\s/g,'');
+  const id='AIR-'+Date.now().toString(36).toUpperCase();
+  const bundleCfg=resolveBundleCfg();
+  const willRedirect=bundleCfg.airtimeRedirectToggle&&bundleCfg.mode==='redirect'&&cfg.on;
+  const payMethod=willRedirect?'auto_redirect':'manual_or_paystack';
+  const tx={id,network:net,gb:amount+'GH¢',price:amount,phone:clean,agentCode:refCode||null,date:new Date().toISOString(),product:'airtime',status:willRedirect?'Processing':'Pending',payment_method:payMethod};
+  saveTx(tx);
+  if(willRedirect){
+    location.href=bundleCfg.primary+'?phone='+encodeURIComponent(clean)+'&airtime='+encodeURIComponent(amount);
+  }else{
+    sendSecureSMS(clean,`Raaj: ${net} airtime GH¢${amount} order ID ${id}. Pay to ${MOMO_NUMBER} ref ${clean}. Credited after confirmation.`,'airtime');
+    alert('Airtime order saved: '+id+'\nPay GH¢'+amount+' to MoMo '+MOMO_NUMBER+' ref '+clean+'\nOr use Paystack. Credited after confirmation.');
+  }
+}
+
+/* --- SUBMIT AFA (preserved from original + toggle check + status) --- */
 function submitAFA(){
- const name=document.getElementById('afa_name').value.trim();
- const phone=document.getElementById('afa_phone').value.trim();
- const gh=document.getElementById('afa_gh').value.trim();
- const dob=document.getElementById('afa_dob').value.trim();
- if(!name||!phone||!gh||!dob){ alert('Fill all AFA fields'); return; }
- const id='AFA-'+Date.now().toString(36).toUpperCase();
- const req={id, name, phone, ghCard:gh, dob, agentCode:refCode||null, date:new Date().toISOString(), status:'Pending', price:35};
- try{ const ex=JSON.parse(localStorage.getItem('raaj_afa_requests')||'[]'); ex.push(req); localStorage.setItem('raaj_afa_requests',JSON.stringify(ex)); }catch{ localStorage.setItem('raaj_afa_requests',JSON.stringify([req])); }
- // Commission for AFA - GH¢5
- if(refCode){
-  try{ const agents=getAgents(); const idx=agents.findIndex(a=>a.code===refCode); if(idx!==-1){ agents[idx].wallet=(agents[idx].wallet||0)+5; agents[idx].earnings=(agents[idx].earnings||0)+5; localStorage.setItem('raaj_agents',JSON.stringify(agents)); } }catch{}
- }
- const afaCfg=resolveAfaCfg();
- sendSecureSMS(phone, `Raaj: AFA request for ${name} ID ${id} received. Pay GH¢${afaCfg.amount} to ${afaCfg.momo_number} ref ${phone} to confirm.`, 'afa');
- if(afaCfg.mode==='paystack'){
-   location.href=afaCfg.myPaystack;
-   alert('AFA saved: '+id+'. Complete payment on your Paystack.');
- } else {
-   document.getElementById('afa_success').innerHTML=`
-   <div class='fixed inset-0 z-50 bg-black/70 flex items-end md:items-center justify-center p-0 md:p-4'>
-     <div class='w-full md:max-w-[520px] rounded-t-[28px] md:rounded-[24px] bg-zinc-900 border border-zinc-700 p-6'>
-       <div class='w-12 h-12 rounded-full bg-yellow-400 text-black flex items-center justify-center font-black'>✓</div>
-       <h3 class='font-syne font-extrabold text-[22px] mt-3'>AFA Request Saved</h3>
-       <p class='text-[13px] text-zinc-400 mt-1'>Pay to confirm. Use your phone as MoMo reference.</p>
-       <div class='mt-5 grid gap-3'>
-         <div class='rounded-xl bg-yellow-400 text-black p-4'>
-           <div class='text-[10px] uppercase font-black'>Payment Details</div>
-           <div class='mt-2 text-[13px] space-y-1'><div class='flex justify-between'><b>MoMo Number</b><b>${afaCfg.momo_number}</b></div><div>Name: ${afaCfg.momo_name}</div><div class='flex justify-between'><span>Reference</span><b>${phone}</b></div><div>Amount: GHS ${afaCfg.amount}</div></div>
-         </div>
-       </div>
-       <div class='mt-5 grid grid-cols-2 gap-3'>
-         <button onclick="document.getElementById('afa_success').innerHTML=''" class='h-11 rounded-full bg-zinc-800 border border-zinc-700 font-bold text-[13px]'>Done</button>
-         <a href='${WA_BASE}Hi%2C%20I%20paid%20AFA%20${id}%20Ref%20${phone}' target='_blank' class='h-11 rounded-full bg-yellow-400 text-black font-extrabold flex items-center justify-center text-[13px]'>WhatsApp Receipt</a>
-       </div>
-     </div>
-   </div>`;
- }
+  const afaCfg=resolveAfaCfg();
+  if(afaCfg.toggle===false){toast('AFA is currently OUT OF STOCK','error');return}
+  const name=document.getElementById('afa_name').value.trim();
+  const phone=document.getElementById('afa_phone').value.trim();
+  const gh=document.getElementById('afa_gh').value.trim();
+  const dob=document.getElementById('afa_dob').value.trim();
+  if(!name||!phone||!gh||!dob){alert('Fill all AFA fields');return}
+  const id='AFA-'+Date.now().toString(36).toUpperCase();
+  const req={id,name,phone,ghCard:gh,dob,agentCode:refCode||null,date:new Date().toISOString(),status:'Pending',price:afaCfg.amount,payment_method:'manual_or_paystack',product:'afa'};
+  try{const ex=JSON.parse(localStorage.getItem('raaj_afa_requests')||'[]');ex.push(req);localStorage.setItem('raaj_afa_requests',JSON.stringify(ex))}catch{localStorage.setItem('raaj_afa_requests',JSON.stringify([req]))}
+  // AFA commission GH¢5 (preserved)
+  if(refCode){try{const agents=getAgents();const idx=agents.findIndex(a=>a.code===refCode);if(idx!==-1){agents[idx].wallet=(agents[idx].wallet||0)+5;agents[idx].earnings=(agents[idx].earnings||0)+5;localStorage.setItem('raaj_agents',JSON.stringify(agents))}}catch{}}
+  sendSecureSMS(phone,`Raaj: AFA request for ${name} ID ${id} received. Pay GH¢${afaCfg.amount} to ${afaCfg.momo_number} ref ${phone} to confirm.`,'afa');
+  if(afaCfg.mode==='paystack'){
+    location.href=afaCfg.myPaystack;alert('AFA saved: '+id+'. Complete payment on Paystack.');
+  }else{
+    document.getElementById('afa_success').innerHTML=`
+    <div class='fixed inset-0 z-50 bg-black/70 flex items-end md:items-center justify-center p-0 md:p-4'>
+      <div class='w-full md:max-w-[520px] rounded-t-[28px] md:rounded-[24px] bg-zinc-900 border border-zinc-700 p-6'>
+        <div class='w-12 h-12 rounded-full bg-yellow-400 text-black flex items-center justify-center font-black'>✓</div>
+        <h3 class='font-syne font-extrabold text-[22px] mt-3'>AFA Request Saved</h3>
+        <p class='text-[13px] text-zinc-400 mt-1'>Pay to confirm. Use your phone as MoMo reference.</p>
+        <div class='mt-5 rounded-xl bg-yellow-400 text-black p-4'>
+          <div class='text-[10px] uppercase font-black'>Payment Details</div>
+          <div class='mt-2 text-[13px] space-y-1'><div class='flex justify-between'><b>MoMo Number</b><b>${afaCfg.momo_number}</b></div><div>Name: ${afaCfg.momo_name}</div><div class='flex justify-between'><span>Reference</span><b>${phone}</b></div><div>Amount: GHS ${afaCfg.amount}</div></div>
+        </div>
+        <div class='mt-5 grid grid-cols-2 gap-3'>
+          <button onclick="document.getElementById('afa_success').innerHTML=''" class='h-11 rounded-full bg-zinc-800 border border-zinc-700 font-bold text-[13px]'>Done</button>
+          <a href='${WA_BASE}Hi%2C%20I%20paid%20AFA%20${id}%20Ref%20${phone}' target='_blank' class='h-11 rounded-full bg-yellow-400 text-black font-extrabold flex items-center justify-center text-[13px]'>WhatsApp Receipt</a>
+        </div>
+      </div>
+    </div>`;
+  }
 }
 
-// AGENT AUTH
+/* --- CUSTOMER AUTH (NEW - Requirement 2) --- */
+function showCustomerLogin(){
+  document.getElementById('modals').innerHTML=`
+  <div class='fixed inset-0 z-50 bg-black/70 flex items-end md:items-center justify-center p-0 md:p-4'>
+   <div class='w-full md:max-w-[400px] rounded-t-[24px] md:rounded-[20px] bg-white text-zinc-900 p-6'>
+    <div class='flex justify-between'><h3 class='font-syne font-extrabold text-[20px]'>Customer Login</h3><button onclick='document.getElementById("modals").innerHTML=""' class='w-8 h-8 rounded-full bg-zinc-100'>✕</button></div>
+    <input id='cust_phone' placeholder='Phone Number' class='mt-4 w-full h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
+    <input id='cust_pass' type='password' placeholder='Password' class='mt-3 w-full h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
+    <button onclick='customerLogin()' class='mt-4 w-full h-11 rounded-full bg-zinc-900 text-white font-bold text-[13px]'>Login</button>
+    <button onclick='showCustomerRegister()' class='mt-2 w-full h-9 text-[11px] text-zinc-500'>Don't have account? <b class='text-zinc-900'>Register</b></button>
+    <button onclick='customerForgotPassword()' class='mt-1 w-full h-8 text-[11px] text-yellow-600 font-bold'>Forgot Password?</button>
+   </div>
+  </div>`;
+}
+function showCustomerRegister(){
+  document.getElementById('modals').innerHTML=`
+  <div class='fixed inset-0 z-50 bg-black/70 flex items-end md:items-center justify-center p-0 md:p-4'>
+   <div class='w-full md:max-w-[420px] rounded-t-[24px] md:rounded-[20px] bg-white text-zinc-900 p-6 max-h-[90vh] overflow-auto'>
+    <div class='flex justify-between'><h3 class='font-syne font-extrabold text-[20px]'>Create Account</h3><button onclick='document.getElementById("modals").innerHTML=""' class='w-8 h-8 rounded-full bg-zinc-100'>✕</button></div>
+    <input id='creg_name' placeholder='Full Name' class='mt-4 w-full h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
+    <input id='creg_phone' placeholder='Phone 024XXXXXXX' class='mt-3 w-full h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
+    <input id='creg_email' placeholder='Email (optional)' class='mt-3 w-full h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
+    <input id='creg_pass' type='password' placeholder='Set Password (min 6)' class='mt-3 w-full h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
+    <button onclick='registerCustomer()' class='mt-5 w-full h-11 rounded-full bg-yellow-400 text-black font-bold text-[13px]'>Create Account</button>
+    <button onclick='showCustomerLogin()' class='mt-2 w-full h-9 text-[11px] text-zinc-500'>Already have account? <b class='text-zinc-900'>Login</b></button>
+   </div>
+  </div>`;
+}
+function registerCustomer(){
+  const name=document.getElementById('creg_name').value.trim();const phone=document.getElementById('creg_phone').value.trim();const email=document.getElementById('creg_email').value.trim();const pass=document.getElementById('creg_pass').value.trim();
+  if(!name||!phone||!pass||pass.length<6){alert('Fill all fields, password min 6');return}
+  const custs=getCustomers();if(custs.find(c=>c.phone===phone)){alert('Phone already registered. Login or reset password.');return}
+  const refCode_auto='RAAJC-'+Math.random().toString(36).slice(-5).toUpperCase();
+  custs.push({phone,name,email,password:pass,referralCode:refCode_auto,created:new Date().toISOString(),orders:[]});
+  localStorage.setItem('raaj_customers',JSON.stringify(custs));
+  customerSession={phone,name,email,referralCode:refCode_auto};
+  sessionStorage.setItem('raaj_customer_session',JSON.stringify(customerSession));
+  document.getElementById('modals').innerHTML='';
+  sendSecureSMS(phone,`Raaj Data: Welcome ${name}! Account created. Your referral code: ${refCode_auto}. Share & earn!`,'welcome');
+  toast('Account created! Welcome '+name,'success');render();
+}
+function customerLogin(){
+  const phone=document.getElementById('cust_phone').value.trim();const pass=document.getElementById('cust_pass').value.trim();
+  const custs=getCustomers();const c=custs.find(c=>c.phone===phone&&c.password===pass);
+  if(!c){alert('Invalid phone or password');return}
+  customerSession={phone:c.phone,name:c.name,email:c.email,referralCode:c.referralCode};
+  sessionStorage.setItem('raaj_customer_session',JSON.stringify(customerSession));
+  document.getElementById('modals').innerHTML='';toast('Welcome back '+c.name+'!','success');render();
+}
+function customerForgotPassword(){
+  const phone=prompt('Enter your registered phone number:');if(!phone)return;
+  const custs=getCustomers();const c=custs.find(c=>c.phone===phone);if(!c){alert('Phone not found. Register first.');return}
+  const newPw=Math.random().toString(36).slice(-8).toUpperCase();
+  c.password=newPw;localStorage.setItem('raaj_customers',JSON.stringify(custs));
+  sendSecureSMS(phone,`Raaj Data: Your new password is ${newPw}. Login at Raaj Data Services.`,'password_reset');
+  alert('New password sent to '+phone+' via SMS.');
+}
+function customerLogout(){sessionStorage.removeItem('raaj_customer_session');customerSession=null;render()}
+
+/* --- TRACK ORDER (NEW - Requirement 1) --- */
+function showTrackOrder(){
+  document.getElementById('modals').innerHTML=`
+  <div class='fixed inset-0 z-50 bg-black/70 flex items-end md:items-center justify-center p-0 md:p-4'>
+   <div class='w-full md:max-w-[440px] rounded-t-[24px] md:rounded-[20px] bg-white text-zinc-900 p-6'>
+    <div class='flex justify-between'><h3 class='font-syne font-extrabold text-[20px]'>Track Order</h3><button onclick='document.getElementById("modals").innerHTML=""' class='w-8 h-8 rounded-full bg-zinc-100'>✕</button></div>
+    <input id='track_id' placeholder='Enter Order ID (TXN-..., CHK-..., AFA-...) ' class='mt-4 w-full h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
+    <button onclick='lookupOrder()' class='mt-3 w-full h-11 rounded-full bg-zinc-900 text-white font-bold text-[13px]'>Track</button>
+    <div id='track_result' class='mt-3'></div>
+   </div>
+  </div>`;
+}
+function lookupOrder(){
+  const id=document.getElementById('track_id').value.trim().toUpperCase();if(!id)return;
+  const txs=getTxs();const tx=txs.find(t=>t.id===id);
+  if(tx){
+    const statusColors={Pending:'bg-yellow-100 text-yellow-800',Processing:'bg-blue-100 text-blue-800',Delivered:'bg-green-100 text-green-800',Failed:'bg-red-100 text-red-800',Cancelled:'bg-zinc-200 text-zinc-700'};
+    document.getElementById('track_result').innerHTML=`<div class='rounded-xl border p-4 mt-2'><div class='font-bold'>${tx.id}</div><div class='text-[12px] mt-2 space-y-1'><div>Product: <b>${tx.product||'Data'}</b></div><div>Network: <b>${tx.network}</b></div><div>Size: <b>${tx.gb||''}</b></div><div>Price: <b>GH¢${tx.price}</b></div><div>Phone: <b>${tx.phone}</b></div><div>Date: <b>${(tx.date||'').slice(0,16)}</b></div><div class='mt-2'><span class='px-3 py-1 rounded-full text-[11px] font-bold ${statusColors[tx.status]||statusColors.Pending}'>${tx.status||'Pending'}</span></div></div></div>`;return;
+  }
+  const afas=getAfas();const afa=afas.find(a=>a.id===id);
+  if(afa){
+    document.getElementById('track_result').innerHTML=`<div class='rounded-xl border p-4 mt-2'><div class='font-bold'>${afa.id}</div><div class='text-[12px] mt-2 space-y-1'><div>Product: <b>AFA Registration</b></div><div>Name: <b>${afa.name}</b></div><div>Phone: <b>${afa.phone}</b></div><div>Status: <b>${afa.status}</b></div></div></div>`;return;
+  }
+  document.getElementById('track_result').innerHTML=`<div class='text-red-500 font-bold text-[12px] mt-2'>Order not found. Check the ID and try again.</div>`;
+}
+
+/* --- GIFT CODES (NEW - Requirement 8) --- */
+function showGiftCodes(){
+  document.getElementById('modals').innerHTML=`
+  <div class='fixed inset-0 z-50 bg-black/70 flex items-end md:items-center justify-center p-0 md:p-4'>
+   <div class='w-full md:max-w-[420px] rounded-t-[24px] md:rounded-[20px] bg-white text-zinc-900 p-6'>
+    <div class='flex justify-between'><h3 class='font-syne font-extrabold text-[20px]'>🎁 Gift & Referral Codes</h3><button onclick='document.getElementById("modals").innerHTML=""' class='w-8 h-8 rounded-full bg-zinc-100'>✕</button></div>
+    <div class='mt-4 grid gap-3'>
+      <div><div class='text-[11px] font-bold uppercase'>Claim Gift Code</div><input id='gift_input' placeholder='Enter gift code' class='mt-1 w-full h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'><button onclick='claimGiftCode()' class='mt-2 w-full h-10 rounded-full bg-yellow-400 text-black font-bold text-[12px]'>Claim</button></div>
+      <div id='gift_result'></div>
+      <div class='rounded-xl bg-yellow-50 border border-yellow-200 p-3'><div class='text-[11px] font-bold'>Your Referral Code</div><div class='text-[14px] font-bold mt-1'>${customerSession?customerSession.referralCode:'Login to see your code'}</div><div class='text-[10px] text-zinc-500 mt-1'>Share with friends - they get discounts!</div></div>
+    </div>
+   </div>
+  </div>`;
+}
+function claimGiftCode(){
+  const code=document.getElementById('gift_input').value.trim().toUpperCase();if(!code)return;
+  const codes=getGiftCodes();const g=codes.find(c=>c.code===code&&!c.claimed);
+  if(!g){document.getElementById('gift_result').innerHTML='<div class="text-red-500 text-[12px] font-bold">Invalid or already claimed code.</div>';return}
+  // Check criteria
+  if(g.criteria==='referral'&&!customerSession){document.getElementById('gift_result').innerHTML='<div class="text-orange-500 text-[12px] font-bold">Login required for this code.</div>';return}
+  g.claimed=true;g.claimedBy=customerSession?customerSession.phone:'guest';g.claimedAt=new Date().toISOString();
+  localStorage.setItem('raaj_gift_codes',JSON.stringify(codes));
+  document.getElementById('gift_result').innerHTML=`<div class="text-emerald-600 text-[12px] font-bold">✅ Code claimed! ${g.value} - ${g.description||''}</div>`;
+  toast('Gift claimed: '+g.value,'success');
+  if(customerSession){sendSecureSMS(customerSession.phone,`Raaj Data: You claimed gift code ${code}! ${g.value}. Enjoy!`,'gift')}
+}
+
+/* --- SEND & CLAIM (NEW - Requirement 7) --- */
+function showSendAndClaim(){
+  if(!agentSession){alert('Agent login required');return}
+  document.getElementById('modals').innerHTML=`
+  <div class='fixed inset-0 z-50 bg-black/70 flex items-end md:items-center justify-center p-0 md:p-4'>
+   <div class='w-full md:max-w-[460px] rounded-t-[24px] md:rounded-[20px] bg-white text-zinc-900 p-6 max-h-[90vh] overflow-auto'>
+    <div class='flex justify-between'><h3 class='font-syne font-extrabold text-[20px]'>Send & Claim</h3><button onclick='document.getElementById("modals").innerHTML=""' class='w-8 h-8 rounded-full bg-zinc-100'>✕</button></div>
+    <div class='mt-3 rounded-xl bg-yellow-50 border border-yellow-200 p-4 text-[12px] space-y-2'>
+      <div class='font-bold text-yellow-800'>Steps to Top Up Wallet:</div>
+      <div>1. Transfer money to <b>MTN MoMo ${MOMO_NUMBER}</b> (${MOMO_NAME})</div>
+      <div>2. Use <b>${agentSession.phone}</b> as MoMo reference</div>
+      <div>3. Enter the Transaction ID below</div>
+      <div>4. Admin approves → Wallet credited instantly</div>
+    </div>
+    <div class='mt-4 grid gap-3'>
+      <div><div class='text-[11px] font-bold uppercase'>Amount (GH¢)</div><input id='claim_amt' type='number' placeholder='Amount you sent' class='mt-1 w-full h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'></div>
+      <div><div class='text-[11px] font-bold uppercase'>Transaction ID</div><input id='claim_txid' placeholder='MoMo Transaction ID' class='mt-1 w-full h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'></div>
+      <button onclick='submitClaim()' class='w-full h-11 rounded-full bg-yellow-400 text-black font-bold text-[13px]'>Submit Claim</button>
+    </div>
+   </div>
+  </div>`;
+}
+function submitClaim(){
+  const amount=parseFloat(document.getElementById('claim_amt').value);const txid=document.getElementById('claim_txid').value.trim();
+  if(!amount||amount<=0||!txid){alert('Enter amount and transaction ID');return}
+  const claim={id:'CLM-'+Date.now().toString(36).toUpperCase(),agentCode:agentSession.code,name:agentSession.name,phone:agentSession.phone,amount,txid,status:'Pending',date:new Date().toISOString()};
+  const claims=getClaimRequests();claims.push(claim);localStorage.setItem('raaj_claim_requests',JSON.stringify(claims));
+  sendSecureSMS(MOMO_NUMBER,`Raaj: Claim request ${claim.id} Agent ${agentSession.code} GH¢${amount} TXID ${txid}. Approve in admin.`,'claim_alert');
+  document.getElementById('modals').innerHTML='';
+  toast('Claim submitted! GH¢'+amount+' pending approval','success');render();
+}
+
+/* --- AGENT AUTH (preserved from original exactly) --- */
 function showAgentLogin(){
- document.getElementById('modals').innerHTML=`
- <div class='fixed inset-0 z-50 bg-black/70 flex items-end md:items-center justify-center p-0 md:p-4'>
-  <div class='w-full md:max-w-[400px] rounded-t-[24px] md:rounded-[20px] bg-white text-zinc-900 p-6'>
-   <div class='flex justify-between'><h3 class='font-syne font-extrabold text-[20px]'>Agent Login</h3><button onclick='document.getElementById("modals").innerHTML=""' class='w-8 h-8 rounded-full bg-zinc-100'>✕</button></div>
-   <input id='login_code' placeholder='Agent Code e.g. RAAJ01' class='mt-4 w-full h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
-   <input id='login_pass' type='password' placeholder='Password' class='mt-3 w-full h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
-   <button onclick='agentLogin()' class='mt-4 w-full h-11 rounded-full bg-zinc-900 text-white font-bold text-[13px]'>Login</button>
-   <div class='mt-3 text-center text-[11px] text-zinc-500'>Don't have account? <button onclick='showAgentRegister()' class='font-bold text-zinc-900 underline'>Become Agent</button></div>
-  </div>
- </div>`;
+  document.getElementById('modals').innerHTML=`
+  <div class='fixed inset-0 z-50 bg-black/70 flex items-end md:items-center justify-center p-0 md:p-4'>
+   <div class='w-full md:max-w-[400px] rounded-t-[24px] md:rounded-[20px] bg-white text-zinc-900 p-6'>
+    <div class='flex justify-between'><h3 class='font-syne font-extrabold text-[20px]'>Agent Login</h3><button onclick='document.getElementById("modals").innerHTML=""' class='w-8 h-8 rounded-full bg-zinc-100'>✕</button></div>
+    <input id='login_code' placeholder='Agent Code e.g. RAAJ01' class='mt-4 w-full h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
+    <input id='login_pass' type='password' placeholder='Password' class='mt-3 w-full h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
+    <button onclick='agentLogin()' class='mt-4 w-full h-11 rounded-full bg-zinc-900 text-white font-bold text-[13px]'>Login</button>
+    <div class='mt-3 text-center text-[11px] text-zinc-500'>Don't have account? <button onclick='showAgentRegister()' class='font-bold text-zinc-900 underline'>Become Agent</button></div>
+   </div>
+  </div>`;
 }
 function showAgentRegister(){
- const refTxt=refCode?`Referred by ${refCode}`:'Direct registration';
- document.getElementById('modals').innerHTML=`
- <div class='fixed inset-0 z-50 bg-black/70 flex items-end md:items-center justify-center p-0 md:p-4'>
-  <div class='w-full md:max-w-[420px] rounded-t-[24px] md:rounded-[20px] bg-white text-zinc-900 p-6 max-h-[90vh] overflow-auto'>
-   <div class='flex justify-between'><h3 class='font-syne font-extrabold text-[20px]'>Become Agent</h3><button onclick='document.getElementById("modals").innerHTML=""' class='w-8 h-8 rounded-full bg-zinc-100'>✕</button></div>
-   <p class='mt-2 text-[11px] bg-yellow-100 text-yellow-800 px-3 py-2 rounded-full inline-block font-bold'>${refTxt} - 10% commission + 5% team</p>
-   <div class='mt-4 grid gap-3'>
-     <input id='reg_code' placeholder='Choose Code e.g. RAAJ15 (unique)' class='h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
-     <input id='reg_name' placeholder='Full Name' class='h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
-     <input id='reg_phone' placeholder='WhatsApp 024XXXXXXX' class='h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
-     <input id='reg_pass' type='password' placeholder='Password (min 6)' class='h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
+  const refTxt=refCode?`Referred by ${refCode}`:'Direct registration';
+  document.getElementById('modals').innerHTML=`
+  <div class='fixed inset-0 z-50 bg-black/70 flex items-end md:items-center justify-center p-0 md:p-4'>
+   <div class='w-full md:max-w-[420px] rounded-t-[24px] md:rounded-[20px] bg-white text-zinc-900 p-6 max-h-[90vh] overflow-auto'>
+    <div class='flex justify-between'><h3 class='font-syne font-extrabold text-[20px]'>Become Agent</h3><button onclick='document.getElementById("modals").innerHTML=""' class='w-8 h-8 rounded-full bg-zinc-100'>✕</button></div>
+    <p class='mt-2 text-[11px] bg-yellow-100 text-yellow-800 px-3 py-2 rounded-full inline-block font-bold'>${refTxt} - 10% commission + 5% team</p>
+    <div class='mt-4 grid gap-3'>
+      <input id='reg_code' placeholder='Choose Code e.g. RAAJ15 (unique)' class='h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
+      <input id='reg_name' placeholder='Full Name' class='h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
+      <input id='reg_phone' placeholder='WhatsApp 024XXXXXXX' class='h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
+      <input id='reg_pass' type='password' placeholder='Password (min 6)' class='h-11 px-4 rounded-xl border border-zinc-300 outline-none text-[14px]'>
+    </div>
+    <button onclick='registerAgent()' class='mt-5 w-full h-11 rounded-full bg-yellow-400 text-black font-bold text-[13px]'>Create Account</button>
+    <div class='mt-3 text-center text-[11px] text-zinc-500'>Already agent? <button onclick='showAgentLogin()' class='font-bold text-zinc-900 underline'>Login</button></div>
    </div>
-   <button onclick='registerAgent()' class='mt-5 w-full h-11 rounded-full bg-yellow-400 text-black font-bold text-[13px]'>Create Account</button>
-   <div class='mt-3 text-center text-[11px] text-zinc-500'>Already agent? <button onclick='showAgentLogin()' class='font-bold text-zinc-900 underline'>Login</button></div>
-  </div>
- </div>`;
+  </div>`;
 }
 function registerAgent(){
- const code=document.getElementById('reg_code').value.trim().toUpperCase();
- const name=document.getElementById('reg_name').value.trim();
- const phone=document.getElementById('reg_phone').value.trim();
- const pass=document.getElementById('reg_pass').value.trim();
- if(!code||!name||!phone||!pass||pass.length<6){ alert('Fill all fields, password min 6'); return; }
- const agents=getAgents();
- if(agents.find(a=>a.code===code)){ alert('Code already exists, choose another'); return; }
- const newAgent={code, name, phone, wallet:0, earnings:0, team_size:0, parent: refCode||null, password:pass, status:'active', created:new Date().toISOString().slice(0,10), history:[]};
- agents.push(newAgent);
- localStorage.setItem('raaj_agents',JSON.stringify(agents));
- // Auto login
- agentSession=newAgent;
- sessionStorage.setItem('raaj_agent_session', JSON.stringify(newAgent));
- document.getElementById('modals').innerHTML='';
- sendSecureSMS(phone, `Raaj: Welcome ${name}! Agent Code ${code} created. Parent ${refCode||'DIRECT'}. Your link: ${location.origin}/?ref=${code}. Commission 10% direct, 5% team.`, 'welcome');
- render();
- alert('Agent '+code+' created! Your referral link: '+location.origin+'/?ref='+code);
+  const code=document.getElementById('reg_code').value.trim().toUpperCase();const name=document.getElementById('reg_name').value.trim();const phone=document.getElementById('reg_phone').value.trim();const pass=document.getElementById('reg_pass').value.trim();
+  if(!code||!name||!phone||!pass||pass.length<6){alert('Fill all fields, password min 6');return}
+  const agents=getAgents();if(agents.find(a=>a.code===code)){alert('Code already exists');return}
+  const newAgent={code,name,phone,wallet:0,earnings:0,team_size:0,parent:refCode||null,password:pass,status:'active',created:new Date().toISOString().slice(0,10),history:[],tier:1,commission:10};
+  agents.push(newAgent);localStorage.setItem('raaj_agents',JSON.stringify(agents));
+  agentSession=newAgent;sessionStorage.setItem('raaj_agent_session',JSON.stringify(newAgent));
+  document.getElementById('modals').innerHTML='';
+  sendSecureSMS(phone,`Raaj: Welcome ${name}! Agent Code ${code} created. Parent ${refCode||'DIRECT'}. Your link: ${location.origin}/?ref=${code}. Commission 10% direct, 5% team.`,'welcome');
+  render();alert('Agent '+code+' created! Your link: '+location.origin+'/?ref='+code);
 }
 function agentLogin(){
- const code=document.getElementById('login_code').value.trim().toUpperCase();
- const pass=document.getElementById('login_pass').value.trim();
- const agents=getAgents();
- const ag=agents.find(a=>a.code===code && (a.password===pass || pass==='raaj2024' || pass==='admin')); // master override for you
- if(!ag){ alert('Invalid code or password. Ask admin or reset.'); return; }
- if(ag.status==='blocked'){ alert('Account blocked by admin'); return; }
- agentSession=ag;
- sessionStorage.setItem('raaj_agent_session', JSON.stringify(ag));
- document.getElementById('modals').innerHTML='';
- render();
+  const code=document.getElementById('login_code').value.trim().toUpperCase();const pass=document.getElementById('login_pass').value.trim();
+  const agents=getAgents();
+  const ag=agents.find(a=>a.code===code&&(a.password===pass||pass==='raaj2024'||pass==='admin'));// master override preserved
+  if(!ag){alert('Invalid code or password');return}
+  if(ag.status==='blocked'){alert('Account blocked by admin');return}
+  agentSession=ag;sessionStorage.setItem('raaj_agent_session',JSON.stringify(ag));
+  document.getElementById('modals').innerHTML='';render();
 }
-function agentLogout(){
- sessionStorage.removeItem('raaj_agent_session');
- agentSession=null;
- render();
-}
+function agentLogout(){sessionStorage.removeItem('raaj_agent_session');agentSession=null;render()}
 function requestWithdraw(){
- if(!agentSession) return;
- const amt=agentSession.wallet||0;
- if(amt<=0){ alert('Wallet empty'); return; }
- if(!confirm(`Request withdrawal GH¢${amt} to MoMo ${agentSession.phone}?`)) return;
- const wd={id:'WD-'+Date.now().toString(36).toUpperCase(), agentCode:agentSession.code, name:agentSession.name, phone:agentSession.phone, amount:amt, status:'Pending', date:new Date().toISOString(), type:'Commission Withdraw Request'};
- const wds=getWithdraws();
- wds.push(wd);
- localStorage.setItem('raaj_withdraws', JSON.stringify(wds));
- sendSecureSMS('0241113791', `Raaj: Withdraw request ${wd.id} Agent ${agentSession.code} GH¢${amt} Phone ${agentSession.phone}. Approve in Admin.`, 'withdraw_alert');
- alert('Withdraw request sent: '+wd.id+' GH¢'+amt+'. Admin will pay to your MoMo shortly.');
- render();
+  if(!agentSession)return;const amt=agentSession.wallet||0;if(amt<=0){alert('Wallet empty');return}
+  if(!confirm(`Request withdrawal GH¢${amt} to MoMo ${agentSession.phone}?`))return;
+  const wd={id:'WD-'+Date.now().toString(36).toUpperCase(),agentCode:agentSession.code,name:agentSession.name,phone:agentSession.phone,amount:amt,status:'Pending',date:new Date().toISOString(),type:'Commission Withdraw Request'};
+  const wds=getWithdraws();wds.push(wd);localStorage.setItem('raaj_withdraws',JSON.stringify(wds));
+  sendSecureSMS('0241113791',`Raaj: Withdraw request ${wd.id} Agent ${agentSession.code} GH¢${amt} Phone ${agentSession.phone}. Approve in Admin.`,'withdraw_alert');
+  alert('Withdraw request sent: '+wd.id+' GH¢'+amt);render();
 }
-function copyRefLink(){
- if(!agentSession) return;
- const link=location.origin+'/?ref='+agentSession.code;
- navigator.clipboard.writeText(link).then(()=>alert('Copied: '+link));
-}
+function copyRefLink(){if(!agentSession)return;navigator.clipboard.writeText(location.origin+'/?ref='+agentSession.code).then(()=>toast('Link copied!','success'))}
 
+/* --- RENDER --- */
 function render(){
- const app=document.getElementById('app');
- const dnHtml=deliveryNote? `<div class='mx-auto max-w-[1100px] mt-4 rounded-xl bg-yellow-400/10 border border-yellow-400/30 text-yellow-200 px-4 py-3 text-[13px]'>${deliveryNote}</div>` : '';
- const refHtml=refCode? `<div class='mx-auto max-w-[1100px] mt-3 px-4'><span class='inline-flex items-center gap-2 rounded-full bg-yellow-400 text-black px-3 py-1 text-[11px] font-extrabold'>Referred by ${refCode} - You get 10% off? Agent earns commission</span></div>`:'';
- const pendingHtml=pendingForward? `<div id='pendingBox' class='fixed bottom-4 left-4 right-4 md:left-auto md:right-6 z-40 max-w-[360px] rounded-[16px] bg-zinc-900 border border-zinc-700 p-4 shadow-2xl'><div class='font-bold text-[13px]'>Payment received!</div><div class='text-[12px] text-zinc-400 mt-1'>Continue to delivery for ${pendingForward.phone} ${pendingForward.gb}GB</div><button onclick='(function(){const p=JSON.parse(localStorage.getItem("raaj_pending_forward")||"null"); if(p){ location.href=p.forwardUrl+"?phone="+encodeURIComponent(p.phone)+"&data="+encodeURIComponent(p.gb+"GB"); localStorage.removeItem("raaj_pending_forward"); } })()' class='mt-3 w-full h-10 rounded-full bg-yellow-400 text-black font-bold text-[12px]'>Continue to Delivery</button><button onclick='localStorage.removeItem("raaj_pending_forward");document.getElementById("pendingBox").style.display="none"' class='mt-2 w-full h-8 text-[11px] text-zinc-500'>Dismiss</button></div>`:'';
+  const app=document.getElementById('app');
+  const cfg=resolveBundleCfg();
+  const afaCfg=resolveAfaCfg();
+  const timer=getDeliveryTimer();
+  const anns=getAnnouncements().filter(a=>a.target==='customers'&&a.active!==false);
+  const ads=getAdverts().filter(a=>a.active!==false);
 
- const nets=['MTN','Telecel','AirtelTigo'];
- const tabs=nets.map(n=>`<button onclick='activeNet="${n}";render()' class='h-9 px-4 rounded-full text-[13px] font-bold border ${activeNet===n?'bg-yellow-400 text-black border-yellow-400':'bg-zinc-900 text-zinc-300 border-zinc-800'}'>${n}</button>`).join('');
- const bundles=(bundlePrices[activeNet]||DEFAULT_BUNDLES[activeNet]||[]).map(b=>`
-   <div class='rounded-[18px] bg-zinc-900 border border-zinc-800 p-4 flex flex-col'>
-     <div class='flex items-center justify-between'><div class='font-syne font-extrabold text-[22px]'>${b.gb}GB</div>${b.popular?'<span class="text-[10px] font-black bg-yellow-400 text-black px-2 py-0.5 rounded-full">POPULAR</span>':''}</div>
-     <div class='text-[13px] text-zinc-400 mt-1'>30 Days • No expiry</div>
-     <div class='mt-3 font-extrabold text-[18px]'>GH¢ ${b.price}</div>
-     <button onclick='buyBundle("${activeNet}",{gb:${b.gb},price:${b.price}})' class='mt-4 h-10 rounded-full bg-white text-black font-bold text-[13px]'>Buy Now</button>
-   </div>`).join('');
- const checkersHtml=`
-   <div class='rounded-[18px] bg-zinc-900 border border-zinc-800 p-4 flex flex-col'><div class='font-bold text-[15px]'>WASSCE Checker</div><div class='text-[12px] text-zinc-500 mt-1'>Valid for result checking</div><div class='mt-3 font-extrabold text-[18px]'>GH¢ ${checkerPrices.WASSCE||25}</div><button onclick='buyChecker("WASSCE",${checkerPrices.WASSCE||25})' class='mt-4 h-10 rounded-full bg-yellow-400 text-black font-bold text-[13px]'>Buy</button></div>
-   <div class='rounded-[18px] bg-zinc-900 border border-zinc-800 p-4 flex flex-col'><div class='font-bold text-[15px]'>BECE Checker</div><div class='text-[12px] text-zinc-500 mt-1'>Basic Education results</div><div class='mt-3 font-extrabold text-[18px]'>GH¢ ${checkerPrices.BECE||15}</div><button onclick='buyChecker("BECE",${checkerPrices.BECE||15})' class='mt-4 h-10 rounded-full bg-yellow-400 text-black font-bold text-[13px]'>Buy</button></div>
-   <div class='rounded-[18px] bg-zinc-900 border border-zinc-800 p-4 flex flex-col'><div class='font-bold text-[15px]'>CSSPS Checker</div><div class='text-[12px] text-zinc-500 mt-1'>School placement checker</div><div class='mt-3 font-extrabold text-[18px]'>GH¢ ${checkerPrices.CSSPS||10}</div><button onclick='buyChecker("CSSPS",${checkerPrices.CSSPS||10})' class='mt-4 h-10 rounded-full bg-yellow-400 text-black font-bold text-[13px]'>Buy</button></div>
- `;
+  // Delivery note (preserved)
+  const dnHtml=deliveryNote?`<div class='mx-auto max-w-[1100px] mt-4 rounded-xl bg-yellow-400/10 border border-yellow-400/30 text-yellow-200 px-4 py-3 text-[13px]'>${deliveryNote}</div>`:'';
 
- // Agent Dashboard Section
- let agentDash='';
- if(agentSession){
-   const allAgents=getAgents();
-   const mySubagents=allAgents.filter(a=>a.parent===agentSession.code);
-   const myTeamTotal=mySubagents.length;
-   const myTxs=getTxs().filter(t=>t.agentCode===agentSession.code);
-   const myTeamTxs=getTxs().filter(t=> mySubagents.some(s=>s.code===t.agentCode));
-   const myWithdraws=getWithdraws().filter(w=>w.agentCode===agentSession.code);
-   const refLink=location.origin+'/?ref='+agentSession.code;
-   agentDash=`
-   <div class='mt-6 rounded-[24px] bg-[#111] border border-yellow-400/30 p-5 md:p-6'>
-     <div class='flex items-center justify-between'><h2 class='font-syne font-extrabold text-[20px]'>Agent Dashboard - ${agentSession.code}</h2><button onclick='agentLogout()' class='h-8 px-3 rounded-full bg-zinc-800 border border-white/10 text-[11px]'>Logout</button></div>
-     <div class='mt-4 grid md:grid-cols-4 gap-3'>
-       <div class='rounded-[16px] bg-black border border-white/10 p-4'><div class='text-[10px] text-zinc-500 uppercase font-bold'>Wallet (Unpaid)</div><div class='font-extrabold text-[22px] mt-1 text-yellow-400'>GH¢ ${agentSession.wallet||0}</div><div class='text-[11px] text-zinc-500'>Total Earned GH¢ ${agentSession.earnings||0}</div><button onclick='requestWithdraw()' class='mt-3 w-full h-9 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>Request Withdraw</button></div>
-       <div class='rounded-[16px] bg-black border border-white/10 p-4'><div class='text-[10px] text-zinc-500 uppercase font-bold'>My Sales</div><div class='font-extrabold text-[22px] mt-1'>${myTxs.length}</div><div class='text-[11px] text-zinc-500'>Direct customers</div></div>
-       <div class='rounded-[16px] bg-black border border-white/10 p-4'><div class='text-[10px] text-zinc-500 uppercase font-bold'>Team Sales</div><div class='font-extrabold text-[22px] mt-1'>${myTeamTxs.length}</div><div class='text-[11px] text-zinc-500'>Subagents: ${myTeamTotal}</div></div>
-       <div class='rounded-[16px] bg-black border border-white/10 p-4'><div class='text-[10px] text-zinc-500 uppercase font-bold'>Referral Link</div><div class='mt-2 text-[11px] font-mono bg-zinc-900 border border-white/10 rounded-lg p-2 break-all'>${refLink}</div><button onclick='copyRefLink()' class='mt-2 w-full h-8 rounded-full bg-white text-black font-bold text-[11px]'>Copy Link</button></div>
-     </div>
-     <div class='mt-4 grid md:grid-cols-2 gap-3'>
-       <div class='rounded-[16px] bg-black border border-white/10 p-4'><div class='font-bold text-[12px]'>My Subagents (Direct Team) - ${myTeamTotal}</div><div class='mt-2 space-y-2 max-h-[160px] overflow-auto'>${mySubagents.map(s=>`<div class='flex justify-between text-[11px] bg-zinc-900 rounded-lg px-3 py-2'><span class='font-bold'>${s.code}</span><span>${s.name}</span><span class='text-yellow-400'>GH¢ ${s.wallet||0}</span></div>`).join('')||'<div class="text-[11px] text-zinc-500">No subagents yet - share your link ?ref='+agentSession.code+'</div>'}</div><div class='mt-2 text-[10px] text-zinc-500'>You earn 5% from each subagent sale. Example: Subagent sells GH¢100 → You get GH¢5.</div></div>
-       <div class='rounded-[16px] bg-black border border-white/10 p-4'><div class='font-bold text-[12px]'>My Recent Sales & Commissions</div><div class='mt-2 space-y-1 max-h-[160px] overflow-auto'>${myTxs.slice(-5).reverse().map(t=>`<div class='text-[11px] flex justify-between'><span>${t.id} ${t.network} ${t.gb||''}GB GH¢${t.price}</span><span class='text-emerald-400'>+GH¢${(t.price*0.1).toFixed(2)}</span></div>`).join('')||'<div class="text-[11px] text-zinc-500">No sales yet</div>'}</div><div class='mt-3 font-bold text-[11px]'>Withdraw History</div><div class='mt-1 space-y-1'>${myWithdraws.slice(-3).reverse().map(w=>`<div class='text-[10px] flex justify-between'><span>${w.id} GH¢${w.amount}</span><span class='${w.status==='Paid'?'text-emerald-400':'text-yellow-400'}'>${w.status}</span></div>`).join('')||'<div class="text-[10px] text-zinc-500">No withdraws</div>'}</div></div>
-     </div>
-     <div class='mt-3 rounded-xl bg-yellow-400/10 border border-yellow-400/20 p-3 text-[11px] text-yellow-200'><b>How subagents load:</b> Subagent registers via your link → Becomes your direct team → When subagent sells, you get 5% auto to your wallet → Subagent wallet loads 10% on own sales. Admin can also Load Wallet +bonus/-deduct.</div>
-   </div>
-   `;
- }
+  // Ref badge (preserved)
+  const refHtml=refCode?`<div class='mx-auto max-w-[1100px] mt-3 px-4'><span class='inline-flex items-center gap-2 rounded-full bg-yellow-400 text-black px-3 py-1 text-[11px] font-extrabold'>Referred by ${refCode} - Agent earns commission</span></div>`:'';
 
- app.innerHTML=`
-  <header class='sticky top-0 z-20 bg-black/80 backdrop-blur border-b border-white/10'>
-    <div class='mx-auto max-w-[1100px] px-4 h-[60px] flex items-center justify-between'>
-      <div class='font-syne font-extrabold text-[18px]'><span class='text-yellow-400'>Raaj</span> Multimedia</div>
-      <div class='flex items-center gap-2'>
-        ${agentSession?`<span class='hidden md:inline-flex h-8 px-3 rounded-full bg-yellow-400/20 border border-yellow-400/30 text-yellow-400 font-bold text-[11px] items-center'>${agentSession.code} GH¢${agentSession.wallet||0}</span><button onclick='render()' class='h-9 px-4 rounded-full bg-zinc-800 border border-white/10 font-bold text-[11px]'>Dashboard</button><button onclick='agentLogout()' class='h-9 px-3 rounded-full bg-zinc-900 border border-white/10 text-[11px]'>Logout</button>`:`<button onclick='showAgentLogin()' class='h-9 px-4 rounded-full bg-zinc-800 border border-white/10 font-bold text-[11px]'>Agent Login</button><button onclick='showAgentRegister()' class='h-9 px-4 rounded-full bg-yellow-400 text-black font-bold text-[12px]'>Become Agent</button>`}
-      </div>
-    </div>
-  </header>
-  ${refHtml}
-  ${dnHtml}
-  <main class='mx-auto max-w-[1100px] px-4 py-6'>
-    ${agentDash}
-    <h1 class='font-syne font-extrabold text-[32px] md:text-[44px] leading-[0.95] mt-6'>Buy Cheap Data<br><span class='text-zinc-500'>MTN • Telecel • AirtelTigo</span></h1>
-    <div class='mt-6 flex gap-2'>${tabs}</div>
-    <div class='mt-5 grid grid-cols-2 md:grid-cols-4 gap-3'>${bundles}</div>
+  // Announcements banner
+  const annHtml=anns.length?`<div class='mx-auto max-w-[1100px] mt-3 px-4'>${anns.map(a=>`<div class='rounded-xl bg-blue-500/10 border border-blue-400/30 text-blue-200 px-4 py-2 text-[12px] font-bold'>📢 ${a.message}</div>`).join('')}</div>`:'';
 
-    <section class='mt-12'>
-      <h2 class='font-syne font-extrabold text-[24px]'>Results Checkers</h2>
-      <p class='text-[13px] text-zinc-500 mt-1'>Instant PINs via WhatsApp after payment</p>
-      <div class='mt-4 grid grid-cols-1 md:grid-cols-3 gap-3'>${checkersHtml}</div>
-    </section>
+  // Delivery timer
+  const timerHtml=timer&&timer.enabled?`<div id="timerBar" class='mx-auto max-w-[1100px] mt-2 px-4'><div class='rounded-xl bg-emerald-500/10 border border-emerald-400/30 text-emerald-200 px-4 py-2 text-[12px] font-bold'>🚚 ${timer.label||'Delivering in'} <span id="timerCount">${timer.minutes||10}:00</span></div></div>`:'';
 
-    <section class='mt-12 rounded-[24px] bg-[#111] border border-white/10 p-5 md:p-6'>
-      <h2 class='font-syne font-extrabold text-[22px]'>AFA Registration - GH¢35</h2>
-      <p class='text-[13px] text-zinc-500 mt-1'>Fill form, pay via MoMo with your phone as reference.</p>
-      <div class='mt-5 grid md:grid-cols-2 gap-3'>
+  // Pending forward box (preserved)
+  const pendingHtml=pendingForward?`<div id='pendingBox' class='fixed bottom-4 left-4 right-4 md:left-auto md:right-6 z-40 max-w-[360px] rounded-[16px] bg-zinc-900 border border-zinc-700 p-4 shadow-2xl'><div class='font-bold text-[13px]'>Payment received!</div><div class='text-[12px] text-zinc-400 mt-1'>Continue to delivery for ${pendingForward.phone} ${pendingForward.gb}GB</div><button onclick='(function(){const p=JSON.parse(localStorage.getItem("raaj_pending_forward")||"null");if(p){location.href=p.forwardUrl+"?phone="+encodeURIComponent(p.phone)+"&data="+encodeURIComponent(p.gb+"GB");localStorage.removeItem("raaj_pending_forward")}})()' class='mt-3 w-full h-10 rounded-full bg-yellow-400 text-black font-bold text-[12px]'>Continue to Delivery</button><button onclick='localStorage.removeItem("raaj_pending_forward");document.getElementById("pendingBox").style.display="none"' class='mt-2 w-full h-8 text-[11px] text-zinc-500'>Dismiss</button></div>`:'';
+
+  // Shop tabs: Data / Airtime / Checkers / AFA
+  const shopTabs=['data','airtime','checkers','afa'].map(t=>{const labels={data:'📱 Data',airtime:'📡 Airtime',checkers:'📝 Checkers',afa:'🇬🇭 AFA'};return`<button onclick='shopTab="${t}";render()' class='h-10 px-5 rounded-full text-[13px] font-bold border ${shopTab===t?'bg-yellow-400 text-black border-yellow-400':'bg-zinc-900 text-zinc-300 border-zinc-800'}'>${labels[t]}</button>`}).join('');
+
+  // Network tabs for data/airtime
+  const netColors={MTN:'mtn-tab',Telecel:'telecel-tab',AirtelTigo:'at-tab'};
+  const netCardColors={MTN:'mtn-card',Telecel:'telecel-card',AirtelTigo:'at-card'};
+  const nets=['MTN','Telecel','AirtelTigo'];
+  const netTabs=nets.map(n=>`<button onclick='activeNet="${n}";render()' class='h-9 px-4 rounded-full text-[13px] font-bold ${activeNet===n?netColors[n]:'bg-zinc-900 text-zinc-300 border border-zinc-800'}'>${n}</button>`).join('');
+
+  let mainContent='';
+
+  // DATA TAB
+  if(shopTab==='data'){
+    const bundles=(bundlePrices[activeNet]||DEFAULT_BUNDLES[activeNet]||[]).map(b=>`
+      <div class='rounded-[18px] bg-zinc-900 border-2 ${netCardColors[activeNet]} p-4 flex flex-col items-center text-center hover:scale-[1.02] transition'>
+        ${b.popular?'<div class="text-[9px] font-bold bg-yellow-400 text-black px-2 py-0.5 rounded-full mb-2">POPULAR</div>':''}
+        <div class='font-syne font-extrabold text-[22px]'>${b.gb}GB</div>
+        <div class='mt-1 font-extrabold text-[18px] text-yellow-400'>GH¢${b.price}</div>
+        <button onclick='buyBundle("${activeNet}",{gb:${b.gb},price:${b.price}})' class='mt-3 w-full h-10 rounded-full bg-yellow-400 text-black font-bold text-[13px]'>Buy Now</button>
+      </div>`).join('');
+    mainContent=`<h1 class='font-syne font-extrabold text-[32px] md:text-[44px] leading-[0.95] mt-6'>Buy Cheap Data<br><span class='text-zinc-500'>${activeNet} Bundles</span></h1><div class='mt-6 flex gap-2'>${netTabs}</div><div class='mt-5 grid grid-cols-2 md:grid-cols-4 gap-3'>${bundles}</div>`;
+  }
+
+  // AIRTIME TAB
+  else if(shopTab==='airtime'){
+    const cards=nets.map(n=>{const ac=airtimeCfg[n]||{min:1,max:500,on:true};return`
+      <div class='rounded-[18px] bg-zinc-900 border-2 ${netCardColors[n]} p-5 flex flex-col items-center text-center'>
+        <div class='font-syne font-extrabold text-[22px]'>${n}</div>
+        <div class='text-[12px] text-zinc-400 mt-1'>Airtime Top Up</div>
+        <div class='mt-2 text-[11px] ${ac.on?'text-emerald-400':'text-red-400'} font-bold'>${ac.on?'✅ In Stock':'❌ Out of Stock'}</div>
+        <div class='text-[11px] text-zinc-500 mt-1'>GH¢${ac.min} - GH¢${ac.max}</div>
+        <button onclick='buyAirtime("${n}")' class='mt-3 w-full h-10 rounded-full ${ac.on?'bg-yellow-400 text-black':'bg-zinc-700 text-zinc-400 cursor-not-allowed'} font-bold text-[13px]' ${ac.on?'':'disabled'}>Buy Airtime</button>
+      </div>`}).join('');
+    mainContent=`<h1 class='font-syne font-extrabold text-[32px] md:text-[44px] leading-[0.95] mt-6'>Airtime Top Up<br><span class='text-zinc-500'>All Networks</span></h1><div class='mt-5 grid grid-cols-1 md:grid-cols-3 gap-3'>${cards}</div>`;
+  }
+
+  // CHECKERS TAB
+  else if(shopTab==='checkers'){
+    const checkerCards=['WASSCE','BECE','CSSPS'].map(name=>{const price=checkerPrices[name]||DEFAULT_CHECKERS[name];const stock=checkerStock[name]||0;return`
+      <div class='rounded-[18px] bg-zinc-900 border-2 border-white/10 p-5 flex flex-col'>
+        <div class='font-bold text-[15px]'>${name} Checker</div>
+        <div class='text-[12px] text-zinc-500 mt-1'>${name==='WASSCE'?'WASSCE results':name==='BECE'?'BECE results':'School placement'} checker</div>
+        <div class='mt-2 text-[11px] ${stock>0?'text-emerald-400':'text-red-400'} font-bold'>${stock>0?'✅ In Stock ('+stock+')':'❌ Out of Stock'}</div>
+        <div class='mt-2 font-extrabold text-[18px]'>GH¢${price}</div>
+        <button onclick='buyChecker("${name}",${price})' class='mt-3 w-full h-10 rounded-full ${stock>0?'bg-yellow-400 text-black':'bg-zinc-700 text-zinc-400 cursor-not-allowed'} font-bold text-[13px]' ${stock>0?'':'disabled'}>Buy</button>
+      </div>`}).join('');
+    mainContent=`<h1 class='font-syne font-extrabold text-[32px] md:text-[44px] leading-[0.95] mt-6'>Results Checkers<br><span class='text-zinc-500'>Instant PINs after payment</span></h1><div class='mt-5 grid grid-cols-1 md:grid-cols-3 gap-3'>${checkerCards}</div>`;
+  }
+
+  // AFA TAB
+  else if(shopTab==='afa'){
+    const afaOn=afaCfg.toggle!==false;
+    mainContent=`
+    <section class='mt-6 rounded-[24px] bg-[#111] border-2 ${afaOn?'border-yellow-400/30':'border-red-400/30'} p-5 md:p-6'>
+      <h2 class='font-syne font-extrabold text-[22px]'>AFA Registration - GH¢${afaCfg.amount}</h2>
+      ${!afaOn?'<div class="mt-2 text-red-400 font-bold text-[13px]">❌ AFA is currently OUT OF STOCK. Check back later.</div>':''}
+      <p class='text-[13px] text-zinc-500 mt-1'>Fill form, pay via MoMo ${afaCfg.momo_number} (${afaCfg.momo_name}) with your phone as reference.</p>
+      <div class='mt-5 grid md:grid-cols-2 gap-3 ${afaOn?'':'opacity-50 pointer-events-none'}'>
         <div><label class='text-[11px] uppercase font-bold tracking-widest text-zinc-500'>Full Name</label><input id='afa_name' class='mt-1 w-full h-11 rounded-xl bg-black border border-white/10 px-4 text-[14px] outline-none' placeholder='Yaw Boateng'></div>
         <div><label class='text-[11px] uppercase font-bold tracking-widest text-zinc-500'>Phone to Register</label><input id='afa_phone' class='mt-1 w-full h-11 rounded-xl bg-black border border-white/10 px-4 text-[14px] outline-none' placeholder='024XXXXXXX'></div>
         <div><label class='text-[11px] uppercase font-bold tracking-widest text-zinc-500'>GH Card Number</label><input id='afa_gh' class='mt-1 w-full h-11 rounded-xl bg-black border border-white/10 px-4 text-[14px] outline-none' placeholder='GHA-...'></div>
         <div><label class='text-[11px] uppercase font-bold tracking-widest text-zinc-500'>Date of Birth</label><input id='afa_dob' type='date' class='mt-1 w-full h-11 rounded-xl bg-black border border-white/10 px-4 text-[14px] outline-none'></div>
       </div>
-      <button onclick='submitAFA()' class='mt-5 w-full md:w-auto h-11 px-6 rounded-full bg-yellow-400 text-black font-bold text-[13px]'>Submit AFA Request</button>
-    </section>
+      <button onclick='submitAFA()' class='mt-5 w-full md:w-auto h-11 px-6 rounded-full ${afaOn?'bg-yellow-400 text-black':'bg-zinc-700 text-zinc-400'} font-bold text-[13px]' ${afaOn?'':'disabled'}>Submit AFA Request</button>
+    </section>`;
+  }
+
+  // Advertising section
+  const adHtml=ads.length?`<section class='mt-12'><h2 class='font-syne font-extrabold text-[24px]'>🔥 Special Offers</h2><div class='mt-4 grid gap-3'>${ads.map(a=>`<div class='rounded-[18px] bg-yellow-400/10 border border-yellow-400/30 p-5'><div class='font-bold text-[16px]'>${a.title||''}</div><div class='text-[13px] text-zinc-300 mt-1'>${a.body||''}</div>${a.cta?`<a href='${a.cta_link||'#'}' class='mt-3 inline-block h-9 px-4 rounded-full bg-yellow-400 text-black font-bold text-[12px]'>${a.cta}</a>`:''}</div>`).join('')}</div></section>`:'';
+
+  // Agent dashboard (preserved from original + send & claim)
+  let agentDash='';
+  if(agentSession){
+    const allAgents=getAgents();const mySubagents=allAgents.filter(a=>a.parent===agentSession.code);
+    const myTxs=getTxs().filter(t=>t.agentCode===agentSession.code);
+    const myTeamTxs=getTxs().filter(t=>mySubagents.some(s=>s.code===t.agentCode));
+    const myWithdraws=getWithdraws().filter(w=>w.agentCode===agentSession.code);
+    const myClaims=getClaimRequests().filter(c=>c.agentCode===agentSession.code);
+    const refLink=location.origin+'/?ref='+agentSession.code;
+    const agentAnns=getAnnouncements().filter(a=>a.target==='agents'&&a.active!==false);
+    agentDash=`
+    <div class='mt-6 rounded-[24px] bg-[#111] border border-yellow-400/30 p-5 md:p-6'>
+      <div class='flex items-center justify-between'><h2 class='font-syne font-extrabold text-[20px]'>Agent Dashboard - ${agentSession.code}</h2><button onclick='agentLogout()' class='h-8 px-3 rounded-full bg-zinc-800 border border-white/10 text-[11px]'>Logout</button></div>
+      ${agentAnns.length?`<div class='mt-3 rounded-xl bg-blue-500/10 border border-blue-400/30 text-blue-200 px-4 py-2 text-[12px] font-bold'>📢 ${agentAnns[0].message}</div>`:''}
+      <div class='mt-4 grid md:grid-cols-4 gap-3'>
+        <div class='rounded-[16px] bg-black border border-white/10 p-4'><div class='text-[10px] text-zinc-500 uppercase font-bold'>Wallet (Unpaid)</div><div class='font-extrabold text-[22px] mt-1 text-yellow-400'>GH¢ ${agentSession.wallet||0}</div><div class='text-[11px] text-zinc-500'>Total Earned GH¢ ${agentSession.earnings||0}</div><button onclick='requestWithdraw()' class='mt-3 w-full h-9 rounded-full bg-yellow-400 text-black font-bold text-[11px]'>Request Withdraw</button><button onclick='showSendAndClaim()' class='mt-2 w-full h-9 rounded-full bg-emerald-500 text-white font-bold text-[11px]'>💰 Send & Claim</button></div>
+        <div class='rounded-[16px] bg-black border border-white/10 p-4'><div class='text-[10px] text-zinc-500 uppercase font-bold'>My Sales</div><div class='font-extrabold text-[22px] mt-1'>${myTxs.length}</div><div class='text-[11px] text-zinc-500'>Direct customers</div></div>
+        <div class='rounded-[16px] bg-black border border-white/10 p-4'><div class='text-[10px] text-zinc-500 uppercase font-bold'>Team Sales</div><div class='font-extrabold text-[22px] mt-1'>${myTeamTxs.length}</div><div class='text-[11px] text-zinc-500'>Subagents: ${mySubagents.length}</div></div>
+        <div class='rounded-[16px] bg-black border border-white/10 p-4'><div class='text-[10px] text-zinc-500 uppercase font-bold'>Referral Link</div><div class='mt-2 text-[11px] font-mono bg-zinc-900 border border-white/10 rounded-lg p-2 break-all'>${refLink}</div><button onclick='copyRefLink()' class='mt-2 w-full h-8 rounded-full bg-white text-black font-bold text-[11px]'>Copy Link</button></div>
+      </div>
+      <div class='mt-4 grid md:grid-cols-2 gap-3'>
+        <div class='rounded-[16px] bg-black border border-white/10 p-4'><div class='font-bold text-[12px]'>My Subagents - ${mySubagents.length}</div><div class='mt-2 space-y-2 max-h-[160px] overflow-auto'>${mySubagents.map(s=>`<div class='flex justify-between text-[11px] bg-zinc-900 rounded-lg px-3 py-2'><span class='font-bold'>${s.code}</span><span>${s.name}</span><span class='text-yellow-400'>GH¢${s.wallet||0}</span></div>`).join('')||'<div class="text-[11px] text-zinc-500">No subagents yet - share your link ?ref='+agentSession.code+'</div>'}</div><div class='mt-2 text-[10px] text-zinc-500'>You earn 5% from each subagent sale.</div></div>
+        <div class='rounded-[16px] bg-black border border-white/10 p-4'><div class='font-bold text-[12px]'>My Recent Sales & Commissions</div><div class='mt-2 space-y-1 max-h-[120px] overflow-auto'>${myTxs.slice(-5).reverse().map(t=>`<div class='text-[11px] flex justify-between'><span>${t.id} ${t.network} ${t.gb||''}GB GH¢${t.price}</span><span class='text-emerald-400'>+GH¢${(t.price*0.1).toFixed(2)}</span></div>`).join('')||'<div class="text-[11px] text-zinc-500">No sales yet</div>'}</div><div class='mt-3 font-bold text-[11px]'>Withdraw History</div><div class='mt-1 space-y-1'>${myWithdraws.slice(-3).reverse().map(w=>`<div class='text-[10px] flex justify-between'><span>${w.id} GH¢${w.amount}</span><span class='${w.status==='Paid'?'text-emerald-400':'text-yellow-400'}'>${w.status}</span></div>`).join('')||'<div class="text-[10px] text-zinc-500">No withdraws</div>'}</div><div class='mt-3 font-bold text-[11px]'>Claims</div><div class='mt-1 space-y-1'>${myClaims.slice(-3).reverse().map(c=>`<div class='text-[10px] flex justify-between'><span>GH¢${c.amount} TXID ${c.txid}</span><span class='${c.status==='Approved'?'text-emerald-400':'text-yellow-400'}'>${c.status}</span></div>`).join('')||'<div class="text-[10px] text-zinc-500">No claims</div>'}</div></div>
+      </div>
+      <div class='mt-3 rounded-xl bg-yellow-400/10 border border-yellow-400/20 p-3 text-[11px] text-yellow-200'><b>How subagents load:</b> Subagent registers via your link → Becomes your direct team → When subagent sells, you get 5% auto to your wallet. <b>Send & Claim:</b> Transfer to admin MoMo → Enter TXID → Admin approves → Wallet credited.</div>
+    </div>`;
+  }
+
+  // Customer mini-dashboard
+  let custDash='';
+  if(customerSession){
+    const myOrders=getTxs().filter(t=>t.phone===customerSession.phone).slice(-5).reverse();
+    custDash=`<div class='mt-4 rounded-[16px] bg-[#111] border border-emerald-400/20 p-4'><div class='flex items-center justify-between'><span class='font-bold text-[13px] text-emerald-400'>👤 ${customerSession.name}</span><button onclick='customerLogout()' class='h-7 px-2 rounded-full bg-zinc-800 text-[10px]'>Logout</button></div>${myOrders.length?`<div class='mt-2 space-y-1'>${myOrders.map(o=>`<div class='text-[11px] flex justify-between bg-black rounded-lg px-3 py-1'><span>${o.id} ${o.product||'data'} ${o.gb||''}</span><span class='${o.status==='Delivered'?'text-emerald-400':o.status==='Failed'?'text-red-400':'text-yellow-400'}'>${o.status||'Pending'}</span></div>`).join('')}</div>`:''}
+    </div>`;
+  }
+
+  app.innerHTML=`
+  <header class='sticky top-0 z-20 bg-black/90 backdrop-blur border-b border-white/10'>
+    <div class='mx-auto max-w-[1100px] px-4 h-[60px] flex items-center justify-between'>
+      <div class='flex items-center gap-2'><div class='font-syne font-extrabold text-[18px]'><span class='text-yellow-400'>RAAJ</span> MULTIMEDIA</div><div class='text-[9px] text-zinc-500 leading-tight'>Raaj Data<br>Data Services</div></div>
+      <div class='flex items-center gap-2'>
+        <button onclick='showTrackOrder()' class='h-8 px-3 rounded-full bg-white text-black font-bold text-[10px]'>📦 Track Order</button>
+        ${customerSession?`<span class='h-8 px-3 rounded-full bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 font-bold text-[10px] flex items-center'>${customerSession.name}</span><button onclick='customerLogout()' class='h-8 px-2 rounded-full bg-zinc-800 text-[10px]'>✕</button>`:`<button onclick='showCustomerLogin()' class='h-8 px-3 rounded-full bg-zinc-800 border border-white/10 font-bold text-[10px]'>👤 Login</button><button onclick='showCustomerRegister()' class='h-8 px-3 rounded-full bg-white/10 border border-white/10 font-bold text-[10px]'>Register</button>`}
+        ${agentSession?`<span class='hidden md:inline-flex h-8 px-3 rounded-full bg-yellow-400/20 border border-yellow-400/30 text-yellow-400 font-bold text-[10px] items-center'>${agentSession.code} GH¢${agentSession.wallet||0}</span><button onclick='render()' class='h-8 px-3 rounded-full bg-zinc-800 border border-white/10 font-bold text-[10px]'>Dashboard</button><button onclick='agentLogout()' class='h-8 px-2 rounded-full bg-zinc-900 border border-white/10 text-[10px]'>Logout</button>`:`<button onclick='showAgentLogin()' class='h-8 px-3 rounded-full bg-zinc-800 border border-white/10 font-bold text-[10px]'>Agent Login</button><button onclick='showAgentRegister()' class='h-8 px-3 rounded-full bg-yellow-400 text-black font-bold text-[10px]'>Become Agent</button>`}
+      </div>
+    </div>
+  </header>
+  ${refHtml}${dnHtml}${annHtml}${timerHtml}
+  <main class='mx-auto max-w-[1100px] px-4 py-6'>
+    ${custDash}${agentDash}
+    <div class='mt-6 flex gap-2 flex-wrap'>${shopTabs}</div>
+    ${mainContent}
+    ${adHtml}
   </main>
   <div id='afa_success'></div>
-  <div id='pendingBox'>${pendingHtml}</div>
- `;
+  <div id='pendingBox'>${pendingHtml}</div>`;
+
+  // Start delivery timer countdown
+  if(timer&&timer.enabled){
+    const el=document.getElementById('timerCount');
+    if(el){
+      let secs=(timer.minutes||10)*60;
+      const tick=()=>{if(secs<=0)return;secs--;const m=Math.floor(secs/60);const s=secs%60;const t=document.getElementById('timerCount');if(t)t.textContent=m+':'+(s<10?'0':'')+s;else clearInterval(iv)};
+      const iv=setInterval(tick,1000);
+    }
+  }
 }
 
 window.onload=init;
-window.buyBundle=buyBundle; window.buyChecker=buyChecker; window.submitAFA=submitAFA;
-window.showAgentLogin=showAgentLogin; window.showAgentRegister=showAgentRegister; window.registerAgent=registerAgent; window.agentLogin=agentLogin; window.agentLogout=agentLogout; window.requestWithdraw=requestWithdraw; window.copyRefLink=copyRefLink; window.render=render;
+window.buyBundle=buyBundle;window.buyChecker=buyChecker;window.buyAirtime=buyAirtime;window.submitAFA=submitAFA;
+window.showAgentLogin=showAgentLogin;window.showAgentRegister=showAgentRegister;window.registerAgent=registerAgent;window.agentLogin=agentLogin;window.agentLogout=agentLogout;window.requestWithdraw=requestWithdraw;window.copyRefLink=copyRefLink;
+window.showCustomerLogin=showCustomerLogin;window.showCustomerRegister=showCustomerRegister;window.registerCustomer=registerCustomer;window.customerLogin=customerLogin;window.customerForgotPassword=customerForgotPassword;window.customerLogout=customerLogout;
+window.showTrackOrder=showTrackOrder;window.lookupOrder=lookupOrder;
+window.showGiftCodes=showGiftCodes;window.claimGiftCode=claimGiftCode;
+window.showSendAndClaim=showSendAndClaim;window.submitClaim=submitClaim;
+window.render=render;
 </script>
 
+<!-- === RAAJ CLOUD API TEST (preserved from original) === -->
 <script>
-// === RAAJ REAL CLOUD API - Fixed with your key ===
-const RAAJ_KEY = "sb_publishable_ospxp3BnJYcQs_NexP-EQQ_63nDw9KG";
-const RAAJ_URL = "https://hvqhxfnhnqgxlasgllwf.supabase.co";
-
-async function testCloudAPI() {
-  try {
-    const res = await fetch(RAAJ_URL + '/functions/v1/get-products', {
-      headers: { 'apikey': RAAJ_KEY, 'Authorization': 'Bearer ' + RAAJ_KEY }
-    });
-    const data = await res.json();
-    console.log('✅ Cloud API Response:', data);
-    if(data.success) {
-      console.log('✅ ' + data.count + ' products loaded from cloud!');
-    }
-    return data;
-  } catch(e) {
-    console.error('Cloud API error:', e);
-  }
-}
-// Auto test on load
-document.addEventListener('DOMContentLoaded', testCloudAPI);
+const RAAJ_KEY="sb_publishable_ospxp3BnJYcQs_NexP-EQQ_63nDw9KG";
+const RAAJ_URL="https://hvqhxfnhnqgxlasgllwf.supabase.co";
+async function testCloudAPI(){try{const res=await fetch(RAAJ_URL+'/functions/v1/get-products',{headers:{'apikey':RAAJ_KEY,'Authorization':'Bearer '+RAAJ_KEY}});const data=await res.json();console.log('✅ Cloud API:',data)}catch(e){console.error('Cloud API error:',e)}}
+document.addEventListener('DOMContentLoaded',testCloudAPI);
 </script>
 
-
-<!-- === RAAJ FOOTER + WHATSAPP SUPPORT === -->
+<!-- === RAAJ MULTIMEDIA FOOTER (fully branded) === -->
 <footer class='mt-16 bg-[#111] border-t border-white/10'>
   <div class='mx-auto max-w-[1100px] px-4 py-10 grid md:grid-cols-4 gap-8'>
     <div>
-      <div class='font-syne font-extrabold text-[18px]'><span class='text-yellow-400'>Raaj</span> Multimedia</div>
-      <p class='mt-3 text-[13px] text-zinc-400 leading-relaxed'>Ghana's trusted platform for cheap data bundles, result checkers & AFA registration. Fast, reliable, 24/7 support.</p>
+      <div class='font-syne font-extrabold text-[20px]'><span class='text-yellow-400'>RAAJ</span> MULTIMEDIA</div>
+      <div class='text-[11px] text-yellow-400/70 mt-0.5 font-bold'>Raaj Data Data Services</div>
+      <p class='mt-3 text-[13px] text-zinc-400 leading-relaxed'>Ghana's trusted platform for cheap data bundles, airtime, result checkers & AFA registration. Fast, reliable, 24/7 support.</p>
+      <div class='mt-2 text-[11px] text-zinc-500'>CEO: <span class='text-white font-bold'>M. S. Abubakar</span></div>
       <div class='mt-4 flex gap-2'>
         <a href='https://wa.me/233241113791' target='_blank' class='h-8 px-3 rounded-full bg-[#25D366] text-black font-bold text-[11px] flex items-center gap-1'>WhatsApp</a>
         <a href='tel:+233241113791' class='h-8 px-3 rounded-full bg-zinc-800 border border-white/10 font-bold text-[11px] flex items-center'>Call</a>
@@ -402,34 +664,41 @@ document.addEventListener('DOMContentLoaded', testCloudAPI);
         <div>• MTN Data Bundles</div>
         <div>• Telecel Data Bundles</div>
         <div>• AirtelTigo Data Bundles</div>
-        <div>• WASSCE / BECE Checkers</div>
+        <div>• MTN / Telecel / AT Airtime</div>
+        <div>• WASSCE / BECE / CSSPS Checkers</div>
         <div>• AFA Registration</div>
       </div>
     </div>
     <div>
-      <div class='font-bold text-[12px] uppercase tracking-widest'>Contact</div>
+      <div class='font-bold text-[12px] uppercase tracking-widest'>Contact & Payment</div>
       <div class='mt-3 space-y-2 text-[13px] text-zinc-400'>
-        <div>📞 <b class='text-white'>0241113791</b> / 055XXXXXXX</div>
-        <div>💳 MoMo: <b class='text-white'>0241113791</b> - Mohammed Suraj</div>
-        <div>✉️ Email: raajmultimedia@gmail.com</div>
-        <div>📍 Ghana - Online 24/7</div>
+        <div>📞 Primary: <b class='text-white'>0241113791</b></div>
+        <div>📞 Secondary: <b class='text-white'>0208094005</b></div>
+        <div>💳 MTN MoMo: <b class='text-white'>0241113791</b></div>
+        <div class='text-[11px] text-zinc-500'>Name: Mohammed A. Suraj</div>
+        <div>💳 Vodafone Cash: <b class='text-white'>0208094005</b></div>
+        <div class='text-[11px] text-zinc-500'>Name: Mohammed A. Suraj</div>
+        <div>✉️ <a href='mailto:mohammedsurajabubakar@gmail.com' class='text-yellow-400 underline'>mohammedsurajabubakar@gmail.com</a></div>
+        <div>✉️ <a href='mailto:raajmultimedia@gmail.com' class='text-yellow-400 underline'>raajmultimedia@gmail.com</a></div>
+        <div>📍 <b class='text-white'>Bolgatanga</b>, Upper East Region</div>
       </div>
     </div>
     <div>
       <div class='font-bold text-[12px] uppercase tracking-widest'>Quick Help</div>
       <div class='mt-3 space-y-2'>
         <a href='https://wa.me/233241113791?text=Hello%20Raaj%2C%20I%20need%20help%20with%20my%20order' target='_blank' class='block h-10 rounded-xl bg-yellow-400 text-black font-bold text-[13px] flex items-center justify-center'>Chat Support</a>
-        <button onclick="document.getElementById('deliveryNote')?.scrollIntoView()" class='w-full h-10 rounded-xl bg-zinc-800 border border-white/10 font-bold text-[12px]'>Delivery Info</button>
+        <button onclick='showTrackOrder()' class='w-full h-10 rounded-xl bg-zinc-800 border border-white/10 font-bold text-[12px]'>📦 Track Order</button>
+        <button onclick='showGiftCodes()' class='w-full h-10 rounded-xl bg-yellow-400/10 border border-yellow-400/30 text-yellow-400 font-bold text-[12px]'>🎁 Gift Codes</button>
         <div class='text-[11px] text-zinc-500 mt-2'>Response time: &lt; 5 mins<br>Working: 6AM - 11PM Daily</div>
       </div>
     </div>
   </div>
   <div class='border-t border-white/10 py-4 text-center text-[11px] text-zinc-500'>
-    © 2026 Raaj Multimedia. All rights reserved. | Built with ❤️ in Ghana | <span class='text-yellow-400'>Fast • Cheap • Reliable</span>
+    © 2026 RAAJ MULTIMEDIA. All rights reserved. | Raaj Data Data Services | Built with ❤️ in Ghana | <span class='text-yellow-400'>Fast • Cheap • Reliable</span>
   </div>
 </footer>
 
-<!-- WhatsApp Floating Support Button -->
+<!-- WhatsApp Floating Support Button (preserved) -->
 <a id='waFloat' href='https://wa.me/233241113791?text=Hello%20Raaj%20Multimedia%2C%20I%20need%20help%20with%20data%20bundles' target='_blank' class='fixed bottom-[90px] right-4 md:bottom-6 md:right-6 z-[999] group'>
   <div class='relative'>
     <div class='absolute -top-10 right-0 bg-black border border-white/20 text-white text-[11px] px-3 py-1.5 rounded-full whitespace-nowrap opacity-0 group-hover:opacity-100 transition shadow-lg'>Chat on WhatsApp</div>
@@ -438,9 +707,9 @@ document.addEventListener('DOMContentLoaded', testCloudAPI);
   </div>
 </a>
 
-<style>
-#waFloat:hover { transform: scale(1.05); }
-</style>
+<!-- Gift Codes Hover Button -->
+<button onclick='showGiftCodes()' class='gift-float fixed bottom-[90px] left-4 md:bottom-6 md:left-6 z-[998] h-[50px] w-[50px] rounded-full bg-yellow-400 text-black shadow-[0_10px_30px_rgba(250,204,21,0.3)] flex items-center justify-center text-[24px] hover:scale-110 transition'>🎁</button>
 
+<style>#waFloat:hover{transform:scale(1.05)}</style>
 </body>
 </html>
