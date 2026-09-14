@@ -1,0 +1,17 @@
+{
+  "name": "RAAJ MULTIMEDIA - Data Shop",
+  "short_name": "Raaj Data",
+  "description": "Buy cheap data bundles, airtime, checkers & AFA registration",
+  "start_url": "./app.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0a",
+  "theme_color": "#FFC300",
+  "categories": ["shopping", "utilities"],
+  "icons": [
+    {"src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='40' fill='%230a0a0a'/><text x='96' y='80' font-family='Arial' font-weight='900' font-size='50' fill='%23FFC300' text-anchor='middle'>RAAJ</text><text x='96' y='125' font-family='Arial' font-weight='600' font-size='18' fill='white' text-anchor='middle'>MULTIMEDIA</text></svg>", "sizes": "192x192", "type": "image/svg+xml"},
+    {"src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='100' fill='%230a0a0a'/><text x='256' y='220' font-family='Arial' font-weight='900' font-size='140' fill='%23FFC300' text-anchor='middle'>RAAJ</text><text x='256' y='340' font-family='Arial' font-weight='600' font-size='50' fill='white' text-anchor='middle'>MULTIMEDIA</text></svg>", "sizes": "512x512", "type": "image/svg+xml"}
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false
+}
